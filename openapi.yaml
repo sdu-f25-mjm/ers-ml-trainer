@@ -1,0 +1,741 @@
+openapi: 3.0.3
+info:
+  description: >
+    API til at hente og gruppere data fra Energinets Production and Consumption - 
+    Settlement datasæt.
+  title: Energi Data API
+  version: "1.0.0"
+paths:
+  /data:
+    get:
+      operationId: getData
+      summary: Hent al data med filtrering og dato-interval
+      tags:
+        - Data
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/priceArea'
+      responses:
+        "200":
+          description: Fuld dataset inden for dato-interval
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DataRow'
+        "400":
+          description: Bad request - invalid date format or parameters
+        "404":
+          description: No data found for the specified criteria
+        "500":
+          description: Internal server error
+      x-accepts:
+        - application/json
+  /production:
+    get:
+      operationId: getProduction
+      summary: Hent produktionsdata
+      tags:
+        - Production
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/priceArea'
+        - $ref: '#/components/parameters/productionType'
+      responses:
+        "200":
+          description: Produktionsdata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductionResponse'
+        "400":
+          description: Bad request - invalid date format or parameters
+        "404":
+          description: No data found for the specified criteria
+      x-accepts:
+        - application/json
+  /consumption:
+    get:
+      operationId: getConsumption
+      summary: Hent forbrugsdata
+      tags:
+        - Consumption
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/priceArea'
+      responses:
+        "200":
+          description: Forbrugsdata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsumptionResponse'
+        "400":
+          description: Bad request - invalid date format or parameters
+        "404":
+          description: No data found for the specified criteria
+      x-accepts:
+        - application/json
+  /exchange:
+    get:
+      operationId: getExchange
+      summary: Hent udvekslingsdata med andre lande
+      tags:
+        - Exchange
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/exchangeCountry'
+      responses:
+        "200":
+          description: Udvekslingsdata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExchangeData'
+        "400":
+          description: Bad request - invalid date format or parameters
+        "404":
+          description: No data found for the specified criteria
+      x-accepts:
+        - application/json
+
+  # New endpoints
+  /aggregated/production:
+    get:
+      operationId: getAggregatedProduction
+      summary: Hent aggregerede produktionsdata efter dag/uge/måned
+      tags:
+        - Aggregated
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/priceArea'
+        - $ref: '#/components/parameters/aggregationType'
+        - $ref: '#/components/parameters/productionType'
+      responses:
+        "200":
+          description: Aggregeret produktionsdata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AggregatedProductionData'
+        "400":
+          description: Bad request - invalid date format or parameters
+        "404":
+          description: No data found for the specified criteria
+        "500":
+          description: Internal server error
+      x-accepts:
+        - application/json
+
+  /analysis/comparison:
+    get:
+      operationId: getComparisonAnalysis
+      summary: Sammenlign data mellem forskellige tidsperioder
+      tags:
+        - Analysis
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/compareFrom'
+        - $ref: '#/components/parameters/compareTo'
+        - $ref: '#/components/parameters/priceArea'
+        - $ref: '#/components/parameters/comparisonType'
+      responses:
+        "200":
+          description: Sammenligningsanalyse data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComparisonAnalysisResponse'
+        "400":
+          description: Bad request - invalid date format or parameters
+        "404":
+          description: No data found for the specified criteria
+        "500":
+          description: Internal server error
+      x-accepts:
+        - application/json
+
+  /forecast/consumption:
+    get:
+      operationId: getConsumptionForecast
+      summary: Få prognose for fremtidigt energiforbrug
+      tags:
+        - Forecast
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/priceArea'
+        - $ref: '#/components/parameters/forecastHorizon'
+      responses:
+        "200":
+          description: Forbrugsprognose data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsumptionForecastResponse'
+        "400":
+          description: Bad request - invalid date format or parameters
+        "404":
+          description: No data found for the specified criteria
+        "500":
+          description: Internal server error
+      x-accepts:
+        - application/json
+
+  /metrics/carbon-intensity:
+    get:
+      operationId: getCarbonIntensity
+      summary: Hent data om CO2-intensitet baseret på energiproduktionsmix
+      tags:
+        - Metrics
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/priceArea'
+        - $ref: '#/components/parameters/aggregationType'
+      responses:
+        "200":
+          description: CO2-intensitetsdata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CarbonIntensityData'
+        "400":
+          description: Bad request - invalid date format or parameters
+        "404":
+          description: No data found for the specified criteria
+        "500":
+          description: Internal server error
+      x-accepts:
+        - application/json
+
+components:
+  parameters:
+    from:
+      name: from
+      in: query
+      description: Start date/time in ISO 8601 format (UTC)
+      required: true
+      schema:
+        type: string
+        format: date-time
+
+    to:
+      name: to
+      in: query
+      description: End date/time in ISO 8601 format (UTC)
+      required: true
+      schema:
+        type: string
+        format: date-time
+
+    priceArea:
+      name: priceArea
+      in: query
+      description: Prisområde (DK1 eller DK2)
+      required: false
+      style: form
+      explode: true
+      schema:
+        type: string
+        enum:
+          - DK1
+          - DK2
+    productionType:
+      name: type
+      in: query
+      description: Specify the type of the source of the energy
+      required: false
+      style: form
+      explode: true
+      schema:
+        type: string
+        default: all
+        enum:
+          - all
+          - wind
+          - solar
+          - hydro
+          - commercialPower
+          - centralPower
+    exchangeCountry:
+      name: country
+      in: query
+      description: Which country the exchange happens to
+      required: false
+      style: form
+      explode: true
+      schema:
+        type: string
+        enum:
+          - germany
+          - greatbritain
+          - netherlands
+          - norway
+          - sweden
+    # New parameters
+    aggregationType:
+      name: aggregationType
+      in: query
+      description: Type af aggregering for datapunkter
+      required: false
+      style: form
+      explode: true
+      schema:
+        type: string
+        default: daily
+        enum:
+          - hourly
+          - daily
+          - weekly
+          - monthly
+          - yearly
+    compareFrom:
+      name: compareFrom
+      in: query
+      description: Startdato for sammenlignings-perioden i ISO 8601-format (UTC)
+      required: true
+      style: form
+      explode: true
+      schema:
+        type: string
+        format: date-time
+    compareTo:
+      name: compareTo
+      in: query
+      description: Slutdato for sammenlignings-perioden i ISO 8601-format (UTC)
+      required: true
+      style: form
+      explode: true
+      schema:
+        type: string
+        format: date-time
+    comparisonType:
+      name: comparisonType
+      in: query
+      description: Type af sammenligning
+      required: false
+      style: form
+      explode: true
+      schema:
+        type: string
+        default: absolute
+        enum:
+          - absolute
+          - percentage
+          - yearOverYear
+          - custom
+    forecastHorizon:
+      name: horizon
+      in: query
+      description: Antal dage/timer som prognosen skal dække
+      required: false
+      style: form
+      explode: true
+      schema:
+        type: integer
+        default: 24
+        minimum: 1
+        maximum: 720  # 30 days
+
+  schemas:
+    DataRow:
+      type: object
+      properties:
+        HourUTC:
+          type: string
+          format: date-time
+        PriceArea:
+          type: string
+        CentralPower_MWh:
+          type: number
+        LocalPower_MWh:
+          type: number
+        GrossConsumption_MWh:
+          type: number
+        ExchangeNO_MWh:
+          type: number
+        ExchangeSE_MWh:
+          type: number
+        ExchangeDE_MWh:
+          type: number
+        SolarPowerSelfConMWh:
+          type: number
+        GridLossTransmissionMWh:
+          type: number
+      example:
+        HourUTC: "2000-01-23T04:56:07.000+00:00"
+        CentralPower_MWh: 0.8008281904610115
+        PriceArea: "PriceArea"
+        ExchangeNO_MWh: 5.962133916683182
+        GrossConsumption_MWh: 1.4658129805029452
+        ExchangeSE_MWh: 5.637376656633329
+        ExchangeDE_MWh: 2.3021358869347655
+        SolarPowerSelfConMWh: 7.061401241503109
+        GridLossTransmissionMWh: 9.301444243932576
+    ProductionMisc:
+      type: object
+      properties:
+        CentralPower_MWh:
+          type: number
+        LocalPower_MWh:
+          type: number
+        CommercialPower_MWh:
+          type: number
+        CommercialPowerSelfConsumption_MWh:
+          type: number
+        HydroPower_MWh:
+          type: number
+    ProductionWind:
+      type: object
+      properties:
+        WindTotal_MWh:
+          type: number
+        OffshoreWindTotal_MWh:
+          type: number
+        OffshoreWindLt100MW_MWh:
+          type: number
+        OffshoreWindGe100MW_MWh:
+          type: number
+        OnshoreWindTotal_MWh:
+          type: number
+        OnshoreWindGe50kW_MWh:
+          type: number
+    ProductionSolar:
+      type: object
+      properties:
+        SolarTotal_MWh:
+          type: number
+        SolarTotalNoSelfConsumption_MWh:
+          type: number
+        SolarPowerSelfConsumption_MWh:
+          type: number
+        SolarPowerLt10kW_MWh:
+          type: number
+        SolarPowerGe10Lt40kW_MWh:
+          type: number
+        SolarPowerGe40kW_MWh:
+          type: number
+    UsageConsumption:
+      type: object
+      properties:
+        ConsumptionTotal_MWh:
+          type: number
+        ConsumptionPrivate_MWh:
+          type: number
+        ConsumptionPublicTotal_MWh:
+          type: number
+        ConsumptionCommertialTotal_MWh:
+          type: number
+    UsageLoss:
+      type: object
+      properties:
+        GridLossTransmission_MWh:
+          type: number
+        GridLossDistribution_MWh:
+          type: number
+        GridLossInterconnectors_MWh:
+          type: number
+    UsageMisc:
+      type: object
+      properties:
+        PowerToHeatMWh:
+          type: number
+    Exchange:
+      type: object
+      properties:
+        ExchangeNO_MWh:
+          type: number
+        ExchangeSE_MWh:
+          type: number
+        ExchangeDE_MWh:
+          type: number
+        ExchangeNL_MWh:
+          type: number
+        ExchangeGB_MWh:
+          type: number
+        ExchangeGBB_MWh:
+          type: number
+      example:
+        ExchangeGB_MWh: 5.637376656633329
+        ExchangeNO_MWh: 0.8008281904610115
+        ExchangeSE_MWh: 6.027456183070403
+        ExchangeDE_MWh: 1.4658129805029452
+        ExchangeGBB_MWh: 2.3021358869347655
+        ExchangeNL_MWh: 5.962133916683182
+    ExchangeData:
+      type: object
+      properties:
+        HourUTC:
+          type: string
+          format: date-time
+        Country:
+          type: string
+        Export_MWh:
+          type: number
+        Import_MWh:
+          type: number
+        NetExchange_MWh:
+          type: number
+      example:
+        HourUTC: "2000-01-23T04:56:07.000+00:00"
+        Country: "norway"
+        Export_MWh: 120.5
+        Import_MWh: 75.2
+        NetExchange_MWh: 45.3
+    ProductionResponse:
+      allOf:
+        - $ref: '#/components/schemas/ProductionWind'
+        - $ref: '#/components/schemas/ProductionSolar'
+        - $ref: '#/components/schemas/ProductionMisc'
+      example:
+        CommercialPowerSelfConsumption_MWh: 6.84685269835264
+        OnshoreWindTotal_MWh: 5.637376656633329
+        OffshoreWindTotal_MWh: 6.027456183070403
+        CommercialPower_MWh: 1.4894159098541704
+        OffshoreWindLt100MW_MWh: 1.4658129805029452
+        OffshoreWindGe100MW_MWh: 5.962133916683182
+        SolarTotalNoSelfConsumption_MWh: 9.301444243932576
+        LocalPower_MWh: 1.0246457001441578
+        HydroPower_MWh: 7.457744773683766
+        OnshoreWindGe50kW_MWh: 2.3021358869347655
+        SolarPowerSelfConsumption_MWh: 3.616076749251911
+        CentralPower_MWh: 1.2315135367772556
+        SolarPowerGe40kW_MWh: 7.386281948385884
+        SolarTotal_MWh: 7.061401241503109
+        SolarPowerGe10Lt40kW_MWh: 4.145608029883936
+        WindTotal_MWh: 0.8008281904610115
+        SolarPowerLt10kW_MWh: 2.027123023002322
+    ConsumptionResponse:
+      allOf:
+        - $ref: '#/components/schemas/UsageConsumption'
+        - $ref: '#/components/schemas/UsageLoss'
+        - $ref: '#/components/schemas/UsageMisc'
+      example:
+        PowerToHeatMWh: 9.301444243932576
+        ConsumptionTotal_MWh: 0.8008281904610115
+        GridLossTransmission_MWh: 5.637376656633329
+        ConsumptionCommertialTotal_MWh: 5.962133916683182
+        ConsumptionPublicTotal_MWh: 1.4658129805029452
+        ConsumptionPrivate_MWh: 6.027456183070403
+        GridLossInterconnectors_MWh: 7.061401241503109
+        GridLossDistribution_MWh: 2.3021358869347655
+
+    # New schemas for the new endpoints
+    AggregatedProductionData:
+      type: object
+      properties:
+        PeriodStart:
+          type: string
+          format: date-time
+          description: Start tidspunkt for perioden
+        PeriodEnd:
+          type: string
+          format: date-time
+          description: Slut tidspunkt for perioden
+        PriceArea:
+          type: string
+          description: Prisområde (DK1 eller DK2)
+        AggregationType:
+          type: string
+          description: Type af aggregering (hourly, daily, weekly, monthly, yearly)
+        TotalProduction_MWh:
+          type: number
+          description: Total produktion i MWh
+        WindProduction_MWh:
+          type: number
+          description: Vindproduktion i MWh
+        SolarProduction_MWh:
+          type: number
+          description: Solproduktion i MWh
+        HydroProduction_MWh:
+          type: number
+          description: Vandkraftproduktion i MWh
+        CommercialProduction_MWh:
+          type: number
+          description: Kommerciel kraftproduktion i MWh
+        CentralProduction_MWh:
+          type: number
+          description: Central kraftproduktion i MWh
+      example:
+        PeriodStart: "2023-01-01T00:00:00.000+00:00"
+        PeriodEnd: "2023-01-01T23:59:59.000+00:00"
+        PriceArea: "DK1"
+        AggregationType: "daily"
+        TotalProduction_MWh: 45862.3
+        WindProduction_MWh: 22541.8
+        SolarProduction_MWh: 1254.6
+        HydroProduction_MWh: 85.2
+        CommercialProduction_MWh: 8524.3
+        CentralProduction_MWh: 13456.4
+
+    ComparisonAnalysisResponse:
+      type: object
+      properties:
+        MainPeriod:
+          type: object
+          properties:
+            From:
+              type: string
+              format: date-time
+            To:
+              type: string
+              format: date-time
+            PriceArea:
+              type: string
+            Data:
+              type: object
+              additionalProperties:
+                type: number
+        ComparePeriod:
+          type: object
+          properties:
+            From:
+              type: string
+              format: date-time
+            To:
+              type: string
+              format: date-time
+            PriceArea:
+              type: string
+            Data:
+              type: object
+              additionalProperties:
+                type: number
+        Difference:
+          type: object
+          additionalProperties:
+            type: number
+        PercentageChange:
+          type: object
+          additionalProperties:
+            type: number
+      example:
+        MainPeriod:
+          From: "2023-01-01T00:00:00.000+00:00"
+          To: "2023-01-31T23:59:59.000+00:00"
+          PriceArea: "DK1"
+          Data:
+            TotalConsumption_MWh: 1250000
+            WindProduction_MWh: 620000
+            SolarProduction_MWh: 35000
+        ComparePeriod:
+          From: "2022-01-01T00:00:00.000+00:00"
+          To: "2022-01-31T23:59:59.000+00:00"
+          PriceArea: "DK1"
+          Data:
+            TotalConsumption_MWh: 1200000
+            WindProduction_MWh: 580000
+            SolarProduction_MWh: 30000
+        Difference:
+          TotalConsumption_MWh: 50000
+          WindProduction_MWh: 40000
+          SolarProduction_MWh: 5000
+        PercentageChange:
+          TotalConsumption_MWh: 4.17
+          WindProduction_MWh: 6.9
+          SolarProduction_MWh: 16.67
+
+    ConsumptionForecastResponse:
+      type: object
+      properties:
+        RequestDate:
+          type: string
+          format: date-time
+          description: Dato for anmodningen
+        PriceArea:
+          type: string
+          description: Prisområde (DK1 eller DK2)
+        ForecastHorizon:
+          type: integer
+          description: Antal timer/dage for prognosen
+        ForecastData:
+          type: array
+          items:
+            type: object
+            properties:
+              Timestamp:
+                type: string
+                format: date-time
+              ConsumptionForecast_MWh:
+                type: number
+              ConfidenceLow_MWh:
+                type: number
+              ConfidenceHigh_MWh:
+                type: number
+      example:
+        RequestDate: "2023-05-15T10:30:00.000+00:00"
+        PriceArea: "DK1"
+        ForecastHorizon: 24
+        ForecastData:
+          - Timestamp: "2023-05-15T11:00:00.000+00:00"
+            ConsumptionForecast_MWh: 2450.3
+            ConfidenceLow_MWh: 2380.7
+            ConfidenceHigh_MWh: 2520.9
+          - Timestamp: "2023-05-15T12:00:00.000+00:00"
+            ConsumptionForecast_MWh: 2580.1
+            ConfidenceLow_MWh: 2505.6
+            ConfidenceHigh_MWh: 2654.7
+
+    CarbonIntensityData:
+      type: object
+      properties:
+        Timestamp:
+          type: string
+          format: date-time
+          description: Tidspunkt for datapunktet
+        PriceArea:
+          type: string
+          description: Prisområde (DK1 eller DK2)
+        CarbonIntensity_gCO2perKWh:
+          type: number
+          description: Carbon intensity i gram CO2 per kWh
+        EnergyMix:
+          type: object
+          properties:
+            Wind:
+              type: number
+              description: Procentdel af vindenergi
+            Solar:
+              type: number
+              description: Procentdel af solenergi
+            Hydro:
+              type: number
+              description: Procentdel af vandkraft
+            Fossil:
+              type: number
+              description: Procentdel af fossil energi
+            Nuclear:
+              type: number
+              description: Procentdel af atomkraft
+            Biomass:
+              type: number
+              description: Procentdel af bioenergi
+            Other:
+              type: number
+              description: Procentdel af andre energikilder
+      example:
+        Timestamp: "2023-04-10T15:00:00.000+00:00"
+        PriceArea: "DK1"
+        CarbonIntensity_gCO2perKWh: 97.5
+        EnergyMix:
+          Wind: 65.3
+          Solar: 12.5
+          Hydro: 1.2
+          Fossil: 8.7
+          Nuclear: 0
+          Biomass: 11.8
+          Other: 0.5
