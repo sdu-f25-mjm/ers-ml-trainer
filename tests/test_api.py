@@ -1,11 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
-import json
 from datetime import datetime
-import os
 
-from ers_ml_trainer.api.app import app, training_jobs
+from api import app, training_jobs
 
 # Create test client
 client = TestClient(app)

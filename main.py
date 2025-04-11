@@ -90,7 +90,7 @@ def main():
     logger = logging.getLogger(__name__)
 
     # Show system info
-    from ers_ml_trainer.core.gpu_utils import print_system_info
+    from core import print_system_info
     print_system_info()
 
     # Set up mock database if requested
@@ -103,7 +103,7 @@ def main():
     try:
         # Start the FastAPI application using uvicorn
         uvicorn.run(
-            "ers_ml_trainer.api.app:app",
+            "api.app:app",
             host=args.host,
             port=args.port,
             reload=args.reload,

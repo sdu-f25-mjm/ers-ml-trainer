@@ -388,7 +388,7 @@ if __name__ == "__main__":
         user=user,
         password=password,
         database=database,
-        hours=1000,  # One week of hourly data
+        hours=10000, # hours of data to generate
         price_areas=["DK1", "DK2"]
     )
 

@@ -1,12 +1,11 @@
 # core/cache_environment.py
 import gymnasium as gym
 import numpy as np
-import pandas as pd
 import logging
 import os
-from typing import List, Dict, Tuple, Any, Optional
+from typing import List, Dict, Tuple
 from gymnasium import spaces
-from ers_ml_trainer.database_connection import (
+from database_connection import (
     create_database_connection,
     get_available_tables,
     table_exists,

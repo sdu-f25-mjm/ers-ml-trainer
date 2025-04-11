@@ -3,9 +3,8 @@ import numpy as np
 import pandas as pd
 from unittest.mock import patch, MagicMock
 import os
-from typing import List
 
-from ers_ml_trainer.core.cache_environment import MariaDBCacheEnvironment, create_mariadb_cache_env
+from core.cache_environment import MariaDBCacheEnvironment, create_mariadb_cache_env
 
 
 @pytest.fixture

@@ -6,8 +6,8 @@ import os
 from datetime import datetime
 from uuid import uuid4
 
-from ers_ml_trainer.core.model_training import train_cache_model, evaluate_cache_model
-from ers_ml_trainer.core.visualization import visualize_cache_performance
+from core.model_training import train_cache_model, evaluate_cache_model
+from core.visualization import visualize_cache_performance
 
 app = FastAPI(
     title="Cache RL Optimization API",

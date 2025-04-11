@@ -9,8 +9,8 @@ import os
 import json
 from datetime import datetime
 import logging
-from ers_ml_trainer.core.cache_environment import create_mariadb_cache_env
-from ers_ml_trainer.core.gpu_utils import print_system_info
+from core.cache_environment import create_mariadb_cache_env
+from core.gpu_utils import print_system_info
 
 
 
