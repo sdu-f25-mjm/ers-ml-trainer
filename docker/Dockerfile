@@ -26,7 +26,7 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 DEBIAN_FRONTEND=noninteractive 
 RUN apt-get update && apt-get install -y --no-install-recommends python3.11 python3-pip libmariadb-dev curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     ln -sf /usr/bin/python3.11 /usr/bin/python
-RUN pip install --no-cache-dir torch==2.6.0 tensorflow>=2.14.0 --index-url https://download.pytorch.org/whl/cu126
+RUN pip install --no-cache-dir torch tensorflow>=2.14.0
 WORKDIR /app
 COPY . .
 CMD ["python", "main.py"]
