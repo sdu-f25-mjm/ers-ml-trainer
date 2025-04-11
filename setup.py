@@ -18,7 +18,7 @@ setup(
         "uvicorn",
         "pydantic==1.10.8",
         "sqlalchemy==2.0.21",
-        "torch>=2.0.0",
+        "torch>=2.6.0",
         "gymnasium>=0.28.0",
         "stable-baselines3>=2.0.0",
         "numpy>=1.24.0",
@@ -30,7 +30,7 @@ setup(
         "python-multipart>=0.0.6",
         "mysql-connector-python==8.0.33",
         "psutil>=5.9.0",
-        "tensorflow>=2.14.0",
+        "tensorflow-cpu>=2.14.0",
     ],
     entry_points={
         "console_scripts": [
