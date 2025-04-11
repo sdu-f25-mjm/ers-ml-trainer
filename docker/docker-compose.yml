@@ -1,9 +1,10 @@
 services:
   ers-ml-trainer:
+    image: ers-ml-trainer:gpu
     build:
       context: ..
-      dockerfile: Dockerfile
-      target: gpu  # Default to CPU if TARGET is not set
+      dockerfile: docker/Dockerfile
+      target: gpu # Default to CPU; use 'gpu' for CUDA support
     ports:
       - "8000:8000"
     volumes:
