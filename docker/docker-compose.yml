@@ -1,17 +1,17 @@
 services:
   ers-ml-trainer:
-    image: ers-ml-trainer:gpu
+    image: ers-ml-trainer:${TARGET:-cpu}
     build:
       context: ..
-      dockerfile: docker/Dockerfile
-      target: gpu # Default to CPU; use 'gpu' for CUDA support
+      dockerfile: docker/Dockerfile.${TARGET:-cpu}
     ports:
       - "8000:8000"
     volumes:
       - ./models:/app/models
       - ./cache_eval_results:/app/cache_eval_results
     environment:
-      - DB_URL=mysql+mysqlconnector://cacheuser:cachepass@mariadb:3306/cache_db
+      - DB_URL=mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db
+      - USE_GPU=${TARGET:-cpu}
     deploy:
       resources:
         reservations:
@@ -19,6 +19,7 @@ services:
             - driver: nvidia
               count: ${GPU_COUNT:-0}
               capabilities: [gpu]
+              # This will only be used when GPU_COUNT > 0
 
   ers-mariadb:
     image: mariadb:10.11
@@ -34,3 +35,7 @@ services:
 
 volumes:
   db_data:
+
+networks:
+  default:
+    name: ers-network
