@@ -33,6 +33,73 @@ class CacheFeatureExtractor(BaseFeaturesExtractor):
         return self.network(observations)
 
 
+def export_model_to_torchscript(model_path, output_dir="best_model"):
+    """
+    Export trained stable-baselines3 RL model to TorchScript format for production deployment
+
+    Args:
+        model_path: Path to the saved stable-baselines3 model
+        output_dir: Directory to save the exported model
+
+    Returns:
+        Path to the exported TorchScript model
+    """
+    logger = logging.getLogger(__name__)
+    from datetime import datetime  # Add this import
+
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Determine model type from filename
+    if "ppo" in model_path.lower():
+        model = PPO.load(model_path)
+    elif "a2c" in model_path.lower():
+        model = A2C.load(model_path)
+    else:
+        model = DQN.load(model_path)
+
+    # Set to evaluation mode
+    model.policy.set_training_mode(False)
+
+    # Extract the policy network
+    # For DQN, we want the q_net; for A2C/PPO we want the actor
+    if hasattr(model.policy, 'q_net'):
+        policy_net = model.policy.q_net  # For DQN
+    elif hasattr(model.policy, 'actor'):
+        policy_net = model.policy.actor  # For A2C/PPO
+    else:
+        policy_net = model.policy  # Fallback
+
+    # Create example input tensor matching observation space shape
+    example_input = torch.zeros((1, model.observation_space.shape[0]),
+                                dtype=torch.float32)
+
+    try:
+        # Export to TorchScript via tracing
+        traced_model = torch.jit.trace(policy_net, example_input)
+
+        # Save the model
+        output_path = os.path.join(output_dir, "policy.pt")
+        traced_model.save(output_path)
+
+        # Save metadata for model deployment
+        metadata_path = os.path.join(output_dir, "metadata.json")
+        with open(metadata_path, "w") as f:
+            import json
+            json.dump({
+                "original_model": model_path,
+                "observation_space_shape": list(model.observation_space.shape),
+                "action_space_size": model.action_space.n,
+                "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }, f, indent=2)
+
+        logger.info(f"Model successfully exported to {output_path}")
+        return output_path
+
+    except Exception as e:
+        logger.error(f"Failed to export model: {e}")
+        raise
+
 def configure_gpu_environment(gpu_id=None):
     """Configure GPU environment for optimal training performance"""
     logger = logging.getLogger(__name__)

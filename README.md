@@ -81,7 +81,7 @@ The API will be available at http://localhost:8000 with Swagger UI documentation
 curl -X POST "http://localhost:8000/train" \
   -H "Content-Type: application/json" \
   -d '{
-    "db_url": "mysql+mysqlconnector://cacheuser:cachepass@localhost:3306/cache_db",
+    "db_url": "mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db",
     "algorithm": "dqn",
     "cache_size": 10,
     "max_queries": 500,
@@ -106,16 +106,77 @@ You can modify the following parameters:
 - **Feature Columns**: Data fields to use for cache decisions
 - **GPU Usage**: Enable/disable GPU acceleration
 
+# Build and Run Commands for ERS ML Trainer
+
 ## Docker Deployment
 
-The system includes Docker configuration for both GPU and CPU environments. To deploy with GPU support:
+### CPU Build & Run
 
 ```bash
-# Build and start services with GPU support
-GPU_COUNT=1 docker-compose -f docker/docker-compose.yml up -d
+# Build the CPU image
+docker build -f docker/Dockerfile.cpu -t ers-ml-trainer:cpu .
+```
+```bash
+# Run using docker-compose (CPU)
+docker-compose -f docker/docker-compose.yml up -d
+```
 
-# Generate mock database (if needed)
+### GPU Build & Run
+
+```bash
+# Build the GPU image
+docker build -f docker/Dockerfile.gpu -t ers-ml-trainer:gpu .
+```
+```bash
+# Run with GPU support (specify number of GPUs)
+docker compose -f docker/docker-compose.yml up -d
+```
+
+### Database Setup
+
+```bash
+# Generate mock database data
 docker-compose -f docker/docker-compose.yml exec ers-ml-trainer python -m mock.mock_db
+```
+
+## Manual Deployment
+
+```bash
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -e .
+
+# Start API server
+python -m main --host 0.0.0.0 --port 8000
+
+# With hot reload (for development)
+python -m main --reload
+```
+
+## API Usage
+
+```bash
+# Train a model
+curl -X POST "http://localhost:8000/train" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "db_url": "mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db",
+    "algorithm": "dqn",
+    "cache_size": 10,
+    "timesteps": 10000
+  }'
+
+# Evaluate a model
+curl -X POST "http://localhost:8000/evaluate/{job_id}?steps=1000"
+
+# Export model to TorchScript
+curl -X POST "http://localhost:8000/export/{job_id}"
+
+# View logs
+curl "http://localhost:8000/logs?lines=100&level=ERROR"
 ```
 
 ## Database Seeding

@@ -1,28 +1,43 @@
 services:
   ers-ml-trainer:
-    image: ers-ml-trainer:${TARGET:-cpu}
     build:
       context: ..
-      dockerfile: docker/Dockerfile.${TARGET:-cpu}
+      dockerfile: docker/Dockerfile.gpu
+    container_name: ers-ml-trainer
     ports:
       - "8000:8000"
+    networks:
+      - ers-network
     volumes:
-      - ./models:/app/models
-      - ./cache_eval_results:/app/cache_eval_results
+      - ../logs:/app/logs
+      - ../models:/app/models
+      - ../model_checkpoints:/app/model_checkpoints
+      - ../cache_eval_results:/app/cache_eval_results
     environment:
+      - DB_HOST=ers-mariadb
+      - DB_PORT=3306
+      - DB_NAME=cache_db
+      - DB_USER=cacheuser
+      - DB_PASSWORD=cachepass
       - DB_URL=mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db
-      - USE_GPU=${TARGET:-cpu}
+      - API_URL=http://localhost:8000
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    runtime: nvidia
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: ${GPU_COUNT:-0}
+              count: 1
               capabilities: [gpu]
-              # This will only be used when GPU_COUNT > 0
+    command: bash -c "pip install sqlalchemy && python main.py"
+    depends_on:
+      - ers-mariadb
 
   ers-mariadb:
     image: mariadb:10.11
+    container_name: ers-mariadb
     environment:
       - MYSQL_ROOT_PASSWORD=rootpass
       - MYSQL_DATABASE=cache_db
@@ -32,6 +47,13 @@ services:
       - db_data:/var/lib/mysql
     ports:
       - "3306:3306"
+    networks:
+      - ers-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "cacheuser", "-pcachepass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   db_data:

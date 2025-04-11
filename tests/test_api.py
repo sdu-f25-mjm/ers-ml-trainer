@@ -3,7 +3,8 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 from datetime import datetime
 
-from api import app, training_jobs
+from api import app
+from api.app import training_jobs
 
 # Create test client
 client = TestClient(app)
@@ -194,7 +195,7 @@ def test_table_discovery_integration(mock_training, mock_database):
     training_jobs.clear()
 
     request_data = {
-        "db_url": "mysql+mysqlconnector://test:test@localhost:3306/test_db",
+        "db_url": "mysql+mysqlconnector://test:test@ers-mariadb:3306/test_db",
         "algorithm": "dqn",
         "cache_size": 10,
         "max_queries": 500,

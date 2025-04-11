@@ -5,7 +5,7 @@ import logging
 import os
 from typing import List, Dict, Tuple
 from gymnasium import spaces
-from database_connection import (
+from database.database_connection import (
     create_database_connection,
     get_available_tables,
     table_exists,
@@ -50,7 +50,7 @@ class MariaDBCacheEnvironment(gym.Env):
         self.cache_size = cache_size
         self.max_queries = max_queries
         self.db_url = db_url or os.environ.get('DB_URL',
-                                               'mysql+mysqlconnector://cacheuser:cachepass@mariadb:3306/cache_db')
+                                               'mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db')
 
         # Create database connection
         self.logger.info(f"Connecting to database: {self.db_url}")

@@ -1,49 +1,67 @@
-# Base stage with common dependencies
-FROM python:3.11-slim AS base
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 TZ=UTC
+# Base image with CUDA support - using same CUDA version your PyTorch requires
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends libmariadb-dev curl && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Builder stage for dependencies
-FROM base AS builder
-WORKDIR /build
-COPY requirements.txt ./
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt fastapi uvicorn python-dotenv
-
-# GPU stage - production ready
-FROM nvidia/cuda:12.8.1-base-ubuntu22.04 AS final
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    DEBIAN_FRONTEND=noninteractive \
-    TZ=UTC \
+# Environment variables for better installation experience
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    TZ=UTC \
+    DOCKER_ENV=true \
+    PYTHONPATH=/app
 
-# Install Python and essential packages in a single layer
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        python3.11 \
-        python3-pip \
-        libmariadb-dev \
-        curl && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python && \
-    pip install --no-cache-dir --upgrade pip
+# Install system dependencies (combined in one layer)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    git \
+    curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    # Create Python symlinks in same layer
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/bin/pip \
+    # Configure pip for better reliability
+    && pip config set global.timeout 600 \
+    && pip config set global.progress_bar on \
+    # Create necessary directories
+    && mkdir -p /app/logs /app/models /app/model_checkpoints /app/cache_eval_results
 
+# Set working directory
 WORKDIR /app
 
-# Copy Python packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Upgrade pip and install basic tools
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install GPU-specific packages
-RUN pip install --no-cache-dir torch tensorflow>=2.14.0
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
 
+# Install PyTorch with CUDA support explicitly matching base image version
+RUN pip install --no-cache-dir --timeout=900 \
+    torch==2.1.0+cu121 \
+    --extra-index-url https://download.pytorch.org/whl/cu121
+
+# Install TensorFlow with specific version for better compatibility
+RUN pip install --no-cache-dir --timeout=900 tensorflow==2.14.0
+
+# Install dependencies from requirements.txt (excluding any ML libraries already installed)
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install additional ML dependencies in a separate layer
+RUN pip install --no-cache-dir \
+    stable-baselines3 \
+    gymnasium \
+    matplotlib \
+    numpy \
+    pandas
+
+# Copy application files
 COPY . .
+
+# Expose API port
 EXPOSE 8000
+
+# Default command to run the server
 CMD ["python", "main.py"]

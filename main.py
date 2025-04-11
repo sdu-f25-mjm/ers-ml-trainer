@@ -37,7 +37,7 @@ def setup_mock_database(force_recreate: bool):
         from mock.mock_db import generate_mock_database
 
         # Use environment variables or defaults
-        host = os.environ.get('DB_HOST', 'localhost')
+        host = os.environ.get('DB_HOST', 'ers-mariadb')
         user = os.environ.get('DB_USER', 'cacheuser')
         password = os.environ.get('DB_PASSWORD', 'cachepass')
         database = os.environ.get('DB_NAME', 'cache_db')
