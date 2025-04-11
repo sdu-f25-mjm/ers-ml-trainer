@@ -27,7 +27,7 @@ RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
 WORKDIR /app
 
 # Copy the entire application (including setup.py)
-COPY . .
+COPY .. .
 
 # Install the package using setup.py
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
@@ -64,11 +64,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy only requirements first to leverage Docker layer caching
-COPY requirements.txt .
+COPY ../requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
-COPY . .
+COPY .. .
 
 # Create necessary directories
 RUN mkdir -p models cache_eval_results mock logs

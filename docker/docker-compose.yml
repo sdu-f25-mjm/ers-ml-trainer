@@ -1,7 +1,7 @@
 services:
   ers-ml-trainer:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile
       target: gpu  # Default to CPU if TARGET is not set
     ports:

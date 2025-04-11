@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 import torch
 from typing import List, Optional, Dict, Any
@@ -6,8 +6,8 @@ import os
 from datetime import datetime
 from uuid import uuid4
 
-from core.model_training import train_cache_model, evaluate_cache_model
-from core.visualization import visualize_cache_performance
+from ers_ml_trainer.core.model_training import train_cache_model, evaluate_cache_model
+from ers_ml_trainer.core.visualization import visualize_cache_performance
 
 app = FastAPI(
     title="Cache RL Optimization API",

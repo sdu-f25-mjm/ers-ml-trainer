@@ -2,7 +2,6 @@ import uvicorn
 import os
 import argparse
 import logging
-from api.app import app
 
 
 def configure_logging():

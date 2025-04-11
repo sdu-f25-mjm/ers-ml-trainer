@@ -3,12 +3,11 @@ import gymnasium as gym
 import numpy as np
 import pandas as pd
 import logging
-import mysql.connector
 import os
-from typing import List, Dict, Tuple, Any, Optional
+from typing import List, Dict, Tuple
 from gymnasium import spaces
-from database_connection import create_database_connection
-from sqlalchemy import inspect, text
+from ers_ml_trainer.database_connection import create_database_connection
+from sqlalchemy import inspect
 
 
 class MariaDBCacheEnvironment(gym.Env):

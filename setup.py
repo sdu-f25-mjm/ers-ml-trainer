@@ -6,7 +6,7 @@ setup(
     name="cache-rl-optimization",
     version="0.1.0",
     description="Cache Optimization using Reinforcement Learning",
-    long_description=open("README.md").read() if os.path.exists("README.md") else "",
+    long_description=open("docs/README.md").read() if os.path.exists("docs/README.md") else "",
     long_description_content_type="text/markdown",
     author="sdu-f25-mjm",
     author_email="",
