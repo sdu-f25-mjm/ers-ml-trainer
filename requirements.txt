@@ -4,6 +4,7 @@ pydantic==1.10.8
 sqlalchemy==2.0.21
 pandas==2.1.0
 numpy>=1.24.3
+python-dotenv
 matplotlib==3.8.0
 gymnasium==0.29.1
 stable-baselines3[extras]==2.1.0

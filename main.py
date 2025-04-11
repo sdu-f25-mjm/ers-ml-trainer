@@ -90,7 +90,7 @@ def main():
     logger = logging.getLogger(__name__)
 
     # Show system info
-    from core import print_system_info
+    from core.gpu_utils import print_system_info
     print_system_info()
 
     # Set up mock database if requested
