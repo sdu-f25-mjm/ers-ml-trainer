@@ -55,8 +55,7 @@ def setup_mock_database(force_recreate: bool):
             password=password,
             database=database,
             port=3306,
-            hours=24,  # Smaller dataset for faster initialization
-            price_areas=["DK1", "DK2"]
+            hours=24  # Smaller dataset for faster initialization
         )
 
         if success:

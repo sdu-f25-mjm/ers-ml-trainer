@@ -172,26 +172,6 @@ curl -X POST "http://localhost:8000/train" \
     "timesteps": 10000
   }'
   
-{
-  "db_url": "mysql+mysqlconnector://cacheuser:cachepass@localhost:3306/cache_db",
-  "algorithm": "dqn",
-  "cache_size": 10,
-  "max_queries": 500,
-  "timesteps": 100000,
-  "feature_columns": [
-    "PriceArea",
-    "ForecastHorizon",
-    "ConsumptionForecast_MWh",
-    "ConfidenceLow_MWh",
-    "ConfidenceHigh_MWh"
-  ],
-  "optimized_for_cpu": true,
-  "use_gpu": false,
-  "gpu_id": null,
-  "batch_size": 32,
-  "learning_rate": 0.001
-}
-
 # Evaluate a model
 curl -X POST "http://localhost:8000/evaluate/{job_id}?steps=1000"
 

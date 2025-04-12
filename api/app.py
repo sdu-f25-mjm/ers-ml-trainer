@@ -32,14 +32,14 @@ API = os.getenv("API_URL", "localhost:8000")
 
 # Data models for API requests/responses
 class TrainingRequest(BaseModel):
-    db_url: str = Field(..., description="Database connection URL")
+    db_url: str = Field("mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db", description="Database connection URL")
     algorithm: str = Field("dqn", description="RL algorithm to use (dqn, a2c, ppo)")
     cache_size: int = Field(10, description="Size of the cache")
     max_queries: int = Field(500, description="Maximum number of queries for training")
     timesteps: int = Field(100000, description="Training timesteps")
-    feature_columns: Optional[List[str]] = Field(None, description="Feature columns to use")
+    feature_columns: Optional[List[str]] = Field([""], description="Feature columns to use")
     optimized_for_cpu: bool = Field(True, description="Optimize for CPU training")
-    use_gpu: bool = Field(False, description="Use GPU for training if available")
+    use_gpu: bool = Field(True, description="Use GPU for training if available")
     gpu_id: Optional[int] = Field(None, description="Specific GPU ID to use (if multiple)")
     batch_size: Optional[int] = Field(None, description="Batch size for training")
     learning_rate: Optional[float] = Field(None, description="Learning rate for training")
@@ -151,12 +151,30 @@ def health_check():
     """Health check endpoint for monitoring"""
     return {"status": "ok"}
 
-
 @app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new training job")
-async def start_training(request: TrainingRequest, background_tasks: BackgroundTasks):
-    """Start training a new cache optimization model with GPU support"""
+async def start_training(
+    background_tasks: BackgroundTasks,
+    db_type: str = Query("mysql+mysqlconnector", description="Database type: mysql, postgres, or sqlite"),
+    host: str = Query("ers-mariadb", description="Database hostname"),
+    port: int = Query(3306, description="Database port"),
+    user: str = Query("cacheuser", description="Database username"),
+    password: str = Query("cachepass", description="Database password"),
+    database: str = Query("cache_db", description="Database name"),
+    algorithm: str = Query("dqn", description="RL algorithm to use (dqn, a2c, ppo)"),
+    cache_size: int = Query(10, description="Size of the cache"),
+    max_queries: int = Query(500, description="Maximum number of queries for training"),
+    timesteps: int = Query(100000, description="Training timesteps"),
+    feature_columns: Optional[List[str]] = Query([""], description="Feature columns to use"),
+    optimized_for_cpu: bool = Query(True, description="Optimize for CPU training"),
+    use_gpu: bool = Query(True, description="Use GPU for training if available"),
+    gpu_id: Optional[int] = Query(None, description="Specific GPU ID to use (if multiple)"),
+    batch_size: Optional[int] = Query(None, description="Batch size for training"),
+    learning_rate: Optional[float] = Query(None, description="Learning rate for training")
+):
     job_id = str(uuid4())
     start_time = datetime.now().isoformat()
+    db_url: str = f"{db_type}://{user}:{password}@{host}:{port}/{database}"
+
 
     training_jobs[job_id] = {
         "job_id": job_id,
@@ -170,17 +188,17 @@ async def start_training(request: TrainingRequest, background_tasks: BackgroundT
     background_tasks.add_task(
         start_training_in_process,
         job_id,
-        request.db_url,
-        request.algorithm,
-        request.cache_size,
-        request.max_queries,
-        request.timesteps,
-        request.feature_columns,
-        request.optimized_for_cpu,
-        request.use_gpu,
-        request.gpu_id,
-        request.batch_size,
-        request.learning_rate
+        db_url,
+        algorithm,
+        cache_size,
+        max_queries,
+        timesteps,
+        feature_columns,
+        optimized_for_cpu,
+        use_gpu,
+        gpu_id,
+        batch_size,
+        learning_rate
     )
 
     return {
