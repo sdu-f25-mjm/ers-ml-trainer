@@ -1,21 +1,64 @@
 # core/gpu_utils.py
 import logging
-import torch
-import psutil
 import subprocess
+import psutil
+
+
+# core/gpu_utils.py
+
+import logging
+import os
+
+from torch import cuda  # Assuming torch is available
+
+def configure_gpu_environment():
+    """
+    Configure and return the device to be used for computations.
+    If CUDA is available, returns 'cuda', otherwise returns 'cpu'.
+    """
+    logger = logging.getLogger(__name__)
+    if is_cuda_available():
+        device = 'cuda'
+        logger.info("CUDA is available. Configuring GPU environment.")
+    else:
+        device = 'cpu'
+        logger.info("CUDA is not available. Using CPU.")
+
+    # Optionally, set environment variables or torch settings here.
+    os.environ["DEVICE"] = device
+    return device
+
+def is_cuda_available():
+    """Check if CUDA is available without importing torch if possible"""
+    try:
+        # Try to detect NVIDIA GPUs using subprocess first
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, check=True, timeout=2
+        )
+        count = int(result.stdout.strip())
+        return count > 0
+    except (subprocess.SubprocessError, FileNotFoundError, ValueError, TimeoutError):
+        # If nvidia-smi fails, try importing torch
+        try:
+            import torch
+            return torch.cuda.is_available()
+        except ImportError:
+            return False
 
 
 def get_gpu_info():
     """Get detailed information about available GPUs"""
     logger = logging.getLogger(__name__)
 
-    if not torch.cuda.is_available():
+    # First check if CUDA is available without importing torch
+    if not is_cuda_available():
         logger.info("No CUDA-capable GPUs detected")
         return None
 
     gpu_info = []
+    # Try using nvidia-smi first (doesn't require torch)
     try:
-        # Try using nvidia-smi through subprocess
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used,temperature.gpu",
              "--format=csv,noheader,nounits"],
@@ -33,7 +76,16 @@ def get_gpu_info():
                     "temperature_c": float(temp)
                 })
 
+        return gpu_info  # Return early if nvidia-smi worked
     except (subprocess.SubprocessError, FileNotFoundError):
+        pass  # Continue to torch fallback
+
+    # Only import torch if nvidia-smi failed
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return None
+
         # Fallback to basic torch info
         for i in range(torch.cuda.device_count()):
             gpu_info.append({
@@ -43,7 +95,10 @@ def get_gpu_info():
                 "memory_reserved_mb": torch.cuda.memory_reserved(i) / (1024 * 1024)
             })
 
-    return gpu_info
+        return gpu_info
+    except ImportError:
+        logger.info("PyTorch not installed, cannot get GPU information")
+        return None
 
 
 def print_system_info():

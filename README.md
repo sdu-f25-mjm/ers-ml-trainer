@@ -2,29 +2,30 @@ I'll add a section about seeding the database to the README:
 
 # Energy Data Cache Optimization using Reinforcement Learning
 
-This project uses reinforcement learning to optimize database caching strategies for energy data queries. By training models to predict which data should be kept in cache, it improves query performance and reduces database load.
+This project uses reinforcement learning to optimize database caching strategies for energy data queries. By training
+models to predict which data should be kept in cache, it improves query performance and reduces database load.
 
 ## Features
 
 - **Reinforcement Learning Cache Optimization**
-  - Support for multiple algorithms (DQN, A2C, PPO)
-  - Smart data importance evaluation based on renewable energy ratio
-  - Adaptive caching based on data volatility and complexity metrics
+    - Support for multiple algorithms (DQN, A2C, PPO)
+    - Smart data importance evaluation based on renewable energy ratio
+    - Adaptive caching based on data volatility and complexity metrics
 
 - **GPU-Accelerated Training**
-  - CUDA/GPU support for faster model training
-  - Automatic GPU detection and optimization
-  - Configurable for multi-GPU environments
+    - CUDA/GPU support for faster model training
+    - Automatic GPU detection and optimization
+    - Configurable for multi-GPU environments
 
 - **REST API Service**
-  - Model training and evaluation endpoints
-  - Async job management for long-running training tasks
-  - Performance visualization
+    - Model training and evaluation endpoints
+    - Async job management for long-running training tasks
+    - Performance visualization
 
 - **Database Integration**
-  - Support for MariaDB/MySQL
-  - Mock energy database generation for testing
-  - Intelligent query caching
+    - Support for MariaDB/MySQL
+    - Mock energy database generation for testing
+    - Intelligent query caching
 
 ## Requirements
 
@@ -116,6 +117,7 @@ You can modify the following parameters:
 # Build the CPU image
 docker build -f docker/Dockerfile.cpu -t ers-ml-trainer:cpu .
 ```
+
 ```bash
 # Run using docker-compose (CPU)
 docker-compose -f docker/docker-compose.yml up -d
@@ -127,6 +129,7 @@ docker-compose -f docker/docker-compose.yml up -d
 # Build the GPU image
 docker build -f docker/Dockerfile.gpu -t ers-ml-trainer:gpu .
 ```
+
 ```bash
 # Run with GPU support (specify number of GPUs)
 docker compose -f docker/docker-compose.yml up -d
@@ -168,6 +171,26 @@ curl -X POST "http://localhost:8000/train" \
     "cache_size": 10,
     "timesteps": 10000
   }'
+  
+{
+  "db_url": "mysql+mysqlconnector://cacheuser:cachepass@localhost:3306/cache_db",
+  "algorithm": "dqn",
+  "cache_size": 10,
+  "max_queries": 500,
+  "timesteps": 100000,
+  "feature_columns": [
+    "PriceArea",
+    "ForecastHorizon",
+    "ConsumptionForecast_MWh",
+    "ConfidenceLow_MWh",
+    "ConfidenceHigh_MWh"
+  ],
+  "optimized_for_cpu": true,
+  "use_gpu": false,
+  "gpu_id": null,
+  "batch_size": 32,
+  "learning_rate": 0.001
+}
 
 # Evaluate a model
 curl -X POST "http://localhost:8000/evaluate/{job_id}?steps=1000"
@@ -194,6 +217,7 @@ python -m mock.mock_db
 ```
 
 The mock generator creates the following tables:
+
 - `energy_data`: Primary energy production and consumption metrics
 - `production_data`: Detailed breakdown of energy production sources
 - `consumption_data`: Detailed consumption patterns by sector

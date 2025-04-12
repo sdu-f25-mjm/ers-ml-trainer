@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
+# main.py
 import argparse
 import logging
 import os
 import sys
-import uvicorn
-from dotenv import load_dotenv
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 
 def setup_logging(log_level: str):
@@ -54,6 +54,7 @@ def setup_mock_database(force_recreate: bool):
             user=user,
             password=password,
             database=database,
+            port=3306,
             hours=24,  # Smaller dataset for faster initialization
             price_areas=["DK1", "DK2"]
         )
@@ -68,8 +69,29 @@ def setup_mock_database(force_recreate: bool):
         logger.info("Continuing without mock database")
 
 
+def create_app():
+    """Configure and return the app for use by uvicorn."""
+    # Load environment variables
+    load_dotenv()
+
+    # Set up logging with default level
+    setup_logging(os.environ.get("LOG_LEVEL", "INFO"))
+
+    # Show system info
+    from core.gpu_utils import print_system_info
+    print_system_info()
+
+    # Set up mock database if requested
+    if os.environ.get("MOCK_DB", "").lower() == "true":
+        setup_mock_database(os.environ.get("FORCE_RECREATE_DB", "").lower() == "true")
+
+    # Import and return the FastAPI app
+    from api.app import app
+    return app
+
+
 def main():
-    """Main entry point for the application."""
+    """Main entry point for the application when run as a script."""
     # Load environment variables
     load_dotenv()
 
@@ -101,6 +123,7 @@ def main():
 
     # Import the API app
     try:
+        import uvicorn
         # Start the FastAPI application using uvicorn
         uvicorn.run(
             "api.app:app",
@@ -113,6 +136,9 @@ def main():
         logger.error(f"Failed to start server: {e}")
         sys.exit(1)
 
+
+# This is important for running with uvicorn directly
+app = create_app()
 
 if __name__ == "__main__":
     main()

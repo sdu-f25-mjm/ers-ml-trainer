@@ -1,51 +1,70 @@
-from stable_baselines3 import DQN, A2C, PPO
-from stable_baselines3.common.callbacks import EvalCallback
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-import tensorflow as tf
-import torch
-import torch.nn as nn
-import numpy as np
-import os
+# core/model_training.py
 import json
-from datetime import datetime
 import logging
-from core.cache_environment import create_mariadb_cache_env
-from core.gpu_utils import print_system_info
+import os
+from datetime import datetime
+
+import numpy as np
+# Remove torch and tensorflow imports from here
+
+from core.gpu_utils import is_cuda_available, print_system_info, configure_gpu_environment
 
 
+# Configure GPU environment if available and not forcing CPU
+if is_cuda_available():
+    configure_gpu_environment()  # Optionally pass a gpu_id if needed
+    device = "cuda"
+else:
+    device = "cpu"
 
-class CacheFeatureExtractor(BaseFeaturesExtractor):
-    """Custom feature extractor for cache observations with GPU optimization"""
+print(f"Using {device} device")
 
-    def __init__(self, observation_space, features_dim=128):
-        super().__init__(observation_space, features_dim)
-        n_input = int(np.prod(observation_space.shape))
 
-        self.network = nn.Sequential(
-            nn.Linear(n_input, 256),
-            nn.ReLU(),
-            nn.LayerNorm(256),
-            nn.Linear(256, features_dim),
-            nn.ReLU(),
-        )
+class CacheFeatureExtractor:
+    """
+    Custom feature extractor for cache observations with GPU optimization
+    Lazily imported only when torch is available
+    """
 
-    def forward(self, observations):
-        return self.network(observations)
+    def __new__(cls, *args, **kwargs):
+        try:
+            import torch.nn as nn
+            from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+
+            class TorchFeatureExtractor(BaseFeaturesExtractor):
+                def __init__(self, observation_space, features_dim=128):
+                    super().__init__(observation_space, features_dim)
+                    n_input = int(np.prod(observation_space.shape))
+
+                    self.network = nn.Sequential(
+                        nn.Linear(n_input, 256),
+                        nn.ReLU(),
+                        nn.LayerNorm(256),
+                        nn.Linear(256, features_dim),
+                        nn.ReLU(),
+                    )
+
+                def forward(self, observations):
+                    return self.network(observations)
+
+            return TorchFeatureExtractor(*args, **kwargs)
+        except ImportError:
+            logging.getLogger(__name__).warning("PyTorch not available, using default feature extractor")
+            return None
 
 
 def export_model_to_torchscript(model_path, output_dir="best_model"):
     """
     Export trained stable-baselines3 RL model to TorchScript format for production deployment
-
-    Args:
-        model_path: Path to the saved stable-baselines3 model
-        output_dir: Directory to save the exported model
-
-    Returns:
-        Path to the exported TorchScript model
     """
     logger = logging.getLogger(__name__)
-    from datetime import datetime  # Add this import
+
+    try:
+        import torch
+        from stable_baselines3 import DQN, A2C, PPO
+    except ImportError:
+        logger.error("PyTorch or stable-baselines3 not installed, cannot export model")
+        return None
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -62,7 +81,6 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
     model.policy.set_training_mode(False)
 
     # Extract the policy network
-    # For DQN, we want the q_net; for A2C/PPO we want the actor
     if hasattr(model.policy, 'q_net'):
         policy_net = model.policy.q_net  # For DQN
     elif hasattr(model.policy, 'actor'):
@@ -85,7 +103,6 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
         # Save metadata for model deployment
         metadata_path = os.path.join(output_dir, "metadata.json")
         with open(metadata_path, "w") as f:
-            import json
             json.dump({
                 "original_model": model_path,
                 "observation_space_shape": list(model.observation_space.shape),
@@ -100,6 +117,7 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
         logger.error(f"Failed to export model: {e}")
         raise
 
+
 def configure_gpu_environment(gpu_id=None):
     """Configure GPU environment for optimal training performance"""
     logger = logging.getLogger(__name__)
@@ -107,10 +125,17 @@ def configure_gpu_environment(gpu_id=None):
     # Print system information
     print_system_info()
 
-    # Check GPU availability
-    cuda_available = torch.cuda.is_available()
-    if not cuda_available:
+    # Check CUDA availability without importing torch if possible
+    if not is_cuda_available():
         logger.warning("CUDA not available. Using CPU for training.")
+        return False
+
+    try:
+        # Only import torch when we know CUDA is available
+        import torch
+        import tensorflow as tf
+    except ImportError:
+        logger.warning("PyTorch or TensorFlow not installed. Using CPU for training.")
         return False
 
     # Log GPU information
@@ -126,17 +151,20 @@ def configure_gpu_environment(gpu_id=None):
         logger.info(f"Using GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
 
     # Configure TensorFlow GPUs
-    gpus = tf.config.list_physical_devices('GPU')
-    if gpus:
-        try:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logger.info(f"TensorFlow GPU memory growth enabled")
+    try:
+        gpus = tf.config.list_physical_devices('GPU')
+        if gpus:
+            try:
+                for gpu in gpus:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                logger.info(f"TensorFlow GPU memory growth enabled")
 
-            if gpu_id is not None and gpu_id < len(gpus):
-                tf.config.set_visible_devices(gpus[gpu_id], 'GPU')
-        except RuntimeError as e:
-            logger.error(f"TensorFlow GPU configuration error: {e}")
+                if gpu_id is not None and gpu_id < len(gpus):
+                    tf.config.set_visible_devices(gpus[gpu_id], 'GPU')
+            except RuntimeError as e:
+                logger.error(f"TensorFlow GPU configuration error: {e}")
+    except Exception as e:
+        logger.warning(f"Failed to configure TensorFlow: {e}")
 
     # Optimize PyTorch
     torch.backends.cudnn.benchmark = True
@@ -152,6 +180,20 @@ def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
     """Train a cache optimization RL model with GPU/CUDA support"""
     logger = logging.getLogger(__name__)
 
+    # Import only when function is called
+    try:
+        import tensorflow as tf
+    except ImportError:
+        logger.warning("TensorFlow not installed")
+
+    try:
+        from stable_baselines3 import DQN, A2C, PPO
+        from stable_baselines3.common.callbacks import EvalCallback
+        import torch
+    except ImportError:
+        logger.error("Required ML libraries not installed: stable-baselines3 or torch")
+        return None
+
     # Configure directories
     os.makedirs("models", exist_ok=True)
     os.makedirs("model_checkpoints", exist_ok=True)
@@ -163,6 +205,9 @@ def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
 
     device = "cuda" if has_gpu else "cpu"
     logger.info(f"Starting training with {algoritme.upper()} algorithm on {device.upper()}")
+
+    # Import environment only when needed
+    from core.cache_environment import create_mariadb_cache_env
 
     # Validate algorithm
     algoritme = algoritme.lower()
@@ -311,8 +356,22 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=True)
     """Evaluate the trained model with GPU support"""
     logger = logging.getLogger(__name__)
 
-    # Configure GPU if requested
-    has_gpu = torch.cuda.is_available() and use_gpu
+    # Import libraries only when needed
+    try:
+        from stable_baselines3 import DQN, A2C, PPO
+    except ImportError:
+        logger.error("stable-baselines3 not installed, cannot evaluate model")
+        return None
+
+    # Import torch only if needed
+    try:
+        import torch
+        has_gpu = torch.cuda.is_available() and use_gpu
+    except ImportError:
+        logger.warning("PyTorch not installed, using CPU for evaluation")
+        has_gpu = False
+
+    # Configure GPU if requested and available
     if has_gpu:
         configure_gpu_environment()
         device = "cuda"
@@ -340,6 +399,9 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=True)
     import re
     cache_size_match = re.search(r'cache_(\d+)', model_path)
     cache_size = int(cache_size_match.group(1)) if cache_size_match else 10
+
+    # Import environment only when needed
+    from core.cache_environment import create_mariadb_cache_env
 
     # Create evaluation environment
     env = create_mariadb_cache_env(

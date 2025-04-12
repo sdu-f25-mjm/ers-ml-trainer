@@ -1,7 +1,8 @@
-import numpy as np
-import pandas as pd
+# core/cache_features.py
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional
+
+import numpy as np
 
 
 class CacheFeatureCalculator:

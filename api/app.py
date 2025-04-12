@@ -1,17 +1,22 @@
+import asyncio
+import logging
+import os
+import random
 import re
+import threading
+import time
+from datetime import datetime
+from typing import List, Optional, Dict, Any
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel, Field
-import torch
-from typing import List, Optional, Dict, Any
-import os
-from datetime import datetime
-from uuid import uuid4
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
 from core.model_training import train_cache_model, evaluate_cache_model
 from core.visualization import visualize_cache_performance
-import threading
-from mock.mock_db import generate_mock_database, generate_cache_weights
+from mock.mock_db import generate_mock_database
 from mock.simulation import simulate_derived_data_weights
 
 # Global variables to track simulation threads
@@ -22,7 +27,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/"
 )
-API = os.getenv("API_URL", "ers-mariadb")
+API = os.getenv("API_URL", "localhost:8000")
 
 
 # Data models for API requests/responses
@@ -64,10 +69,87 @@ def get_job_status(job_id: str):
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
     return training_jobs[job_id]
 
+
+# Add this function for database connection management
+def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backoff=30):
+    """Create a database connection with retry logic for graceful failure handling"""
+    logger = logging.getLogger(__name__)
+    retries = 0
+    backoff = initial_backoff
+
+    while True:
+        try:
+            logger.info(f"Attempting to connect to database (attempt {retries + 1}/{max_retries})...")
+
+            # Create engine with connection pooling and improved parameters
+            engine = create_engine(
+                db_url,
+                pool_size=5,
+                max_overflow=10,
+                pool_timeout=30,
+                pool_recycle=1800,  # Recycle connections every 30 minutes
+                pool_pre_ping=True,  # Check connection validity before use
+                connect_args={'connect_timeout': 10}  # Timeout for connection attempts
+            )
+
+            # Test connection
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+
+            # Mask password in URL for logging
+            masked_url = db_url.replace("://", "://***:***@", 1).split("@")[-1]
+            logger.info(f"Successfully connected to database at {masked_url}")
+            return engine
+
+        except (SQLAlchemyError, OperationalError) as e:
+            retries += 1
+            if retries > max_retries:
+                logger.error(f"Failed to connect to database after {max_retries} attempts: {e}")
+                return None
+
+            # Add jitter to backoff to prevent connection storms
+            jitter = random.uniform(0, 0.1 * backoff)
+            sleep_time = backoff + jitter
+
+            logger.warning(f"Database connection failed. Retrying in {sleep_time:.2f}s. Error: {e}")
+            time.sleep(sleep_time)
+
+            # Exponential backoff with cap
+            backoff = min(backoff * 2, max_backoff)
+        except Exception as e:
+            logger.error(f"Unexpected error connecting to database: {e}")
+            return None
+
+def start_training_in_process(job_id, db_url, algorithm, cache_size, max_queries,
+                              timesteps, feature_columns, optimized_for_cpu,
+                              use_gpu, gpu_id, batch_size, learning_rate):
+    # Run the training job asynchronously inside the new process
+    asyncio.run(run_training_job(
+        job_id, db_url, algorithm, cache_size, max_queries, timesteps,
+        feature_columns, optimized_for_cpu, use_gpu, gpu_id, batch_size, learning_rate
+    ))
+
+# Add a startup event to test database connectivity
+@app.on_event("startup")
+async def startup_db_client():
+    """Initialize database connection on startup"""
+    logger = logging.getLogger(__name__)
+    logger.info("Testing database connection on startup...")
+
+    db_url = os.getenv("DB_URL", "mysql+mysqlconnector://cacheuser:cachepass@localhost:3306/cache_db")
+    engine = get_database_connection(db_url)
+
+    if engine is None:
+        logger.warning("Could not connect to database, but service will continue to run")
+    else:
+        logger.info("Database connection test successful")
+
+
+
 @app.get("/health")
 def health_check():
     """Health check endpoint for monitoring"""
-    return {"status": "ok", "gpu_available": torch.cuda.is_available()}
+    return {"status": "ok"}
 
 
 @app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new training job")
@@ -86,7 +168,7 @@ async def start_training(request: TrainingRequest, background_tasks: BackgroundT
     }
 
     background_tasks.add_task(
-        run_training_job,
+        start_training_in_process,
         job_id,
         request.db_url,
         request.algorithm,
@@ -120,7 +202,8 @@ async def list_jobs():
     return list(training_jobs.values())
 
 
-@app.post("/evaluate/{job_id}", response_model=Dict[str, Any],tags= ["evaluation"], description= "Evaluate a trained model from a completed job")
+@app.post("/evaluate/{job_id}", response_model=Dict[str, Any], tags=["evaluation"],
+          description="Evaluate a trained model from a completed job")
 async def evaluate_job_model(job_id: str,
                              steps: int = 1000,
                              use_gpu: bool = True):
@@ -182,6 +265,7 @@ async def export_job_model(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to export model: {str(e)}")
+
 
 async def run_training_job(
         job_id: str,
@@ -252,195 +336,181 @@ async def run_training_job(
             "traceback": traceback.format_exc()
         })
 
-
 @app.post("/db/seed", response_model=Dict[str, Any], tags=["database"])
 async def seed_database(
-        db_url: str = Query("mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db"),
+        host: str = Query("ers-mariadb", description="Database hostname"),
+        port: int = Query(3306, description="Database port"),
+        user: str = Query("cacheuser", description="Database username"),
+        password: str = Query("cachepass", description="Database password"),
+        database: str = Query("cache_db", description="Database name"),
         hours: int = Query(1000, description="Hours of data to generate"),
-        price_areas: List[str] = Query([], description="Price areas to include")
+        db_type: str = Query("mysql", description="Database type: mysql, postgres, or sqlite")
 ):
     """Seed the database with mock energy data"""
     try:
-        # Parse connection parameters from URL
-        import re
-        match = re.match(r'mysql\+mysqlconnector://([^:]+):([^@]+)@([^/]+)/([^?]+)', db_url)
-        if not match:
-            raise ValueError("Invalid database URL format")
-
-        user, password, host_port, database = match.groups()
-        host = host_port.split(':')[0]
-
-        # Generate database
+        # Generate database with the specified database type
         success = generate_mock_database(
             host=host,
             user=user,
             password=password,
             database=database,
+            port=port,
             hours=hours,
-            price_areas=price_areas
+            db_type=db_type
         )
 
         if success:
-            return {"status": "success", "message": f"Generated {hours} hours of data for {', '.join(price_areas)}"}
+            return {"status": "success", "message": f"Database seeded with {hours} hours of data"}
         else:
             raise HTTPException(status_code=500, detail="Failed to seed database")
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error seeding database: {str(e)}")
 
-@app.post("/db/weights", response_model=Dict[str, Any], tags=["database"])
-async def generate_weights(
-        db_url: str = Query("mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db")
-):
-    """Generate mock cache weights for database entries"""
-    try:
-        # Parse connection parameters from URL
-        import re
-        match = re.match(r'mysql\+mysqlconnector://([^:]+):([^@]+)@([^/]+)/([^?]+)', db_url)
-        if not match:
-            raise ValueError("Invalid database URL format")
 
-        user, password, host_port, database = match.groups()
-        host = host_port.split(':')[0]
-
-        # Generate weights
-        success = generate_cache_weights(
-            host=host,
-            user=user,
-            password=password,
-            database=database
-        )
-
-        if success:
-            return {"status": "success", "message": "Cache weights generated successfully"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to generate cache weights")
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating weights: {str(e)}")
 @app.post("/simulation/start", response_model=Dict[str, Any], tags=["simulation"])
 async def start_simulation(
-        db_url: str = Query("mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db"),
-        update_interval: int = Query(5, description="Seconds between updates"),
-        access_intensity: int = Query(10, description="Number of items to access per interval"),
-        simulation_id: Optional[str] = Query(None, description="Custom ID for the simulation")
+        host: str = Query("ers-mariadb", description="Database hostname"),
+        port: int = Query(3306, description="Database port"),
+        user: str = Query("cacheuser", description="Database username"),
+        password: str = Query("cachepass", description="Database password"),
+        database: str = Query("cache_db", description="Database name"),
+        update_interval: int = Query(5, description="Simulation update interval in seconds"),
+        db_type: str = Query("mysql", description="Database type: mysql, postgres, or sqlite"),
+        simulation_id: str = Query(None, description="Optional custom simulation ID")
 ):
-    """Start a cache usage simulation"""
+    """Start a simulation of derived data usage"""
     try:
-        # Parse connection parameters from URL
-        import re
-        match = re.match(r'mysql\+mysqlconnector://([^:]+):([^@]+)@([^/]+)/([^?]+)', db_url)
-        if not match:
-            raise ValueError("Invalid database URL format")
+        # Generate a unique ID for this simulation if not provided
+        sim_id = simulation_id or f"sim_{uuid4()}"
 
-        user, password, host_port, database = match.groups()
-        host = host_port.split(':')[0]
-
-        # Generate a simulation ID if not provided
-        sim_id = simulation_id or f"sim_{str(uuid4())[:8]}"
-
+        # Check if a simulation with this ID is already running
         if sim_id in running_simulations:
             return {"status": "already_running", "simulation_id": sim_id}
 
-        # Start simulation in a separate thread with a stop event
+        # Get the appropriate database handler
+        from mock.mock_db import get_db_handler
+        db = get_db_handler(db_type)
+
+        # Connect to database
+        if db_type == 'sqlite':
+            success = db.connect('', 0, '', '', database)
+        else:
+            success = db.connect(host, port, user, password, database)
+
+        if not success:
+            raise HTTPException(status_code=500, detail=f"Failed to connect to {db_type} database")
+
+        # Create stop event for this simulation
         stop_event = threading.Event()
 
-        def run_simulation():
-            simulate_derived_data_weights(
-                host=host,
-                user=user,
-                password=password,
-                database=database,
-                update_interval=update_interval,
-                run_duration=None,
-                stop_event=stop_event
-            )
-
-        # Start the simulation thread
-        sim_thread = threading.Thread(target=run_simulation)
-        sim_thread.daemon = True
+        # Start simulation in a separate thread
+        sim_thread = threading.Thread(
+            target=simulate_derived_data_weights,
+            args=(db, update_interval, None, stop_event),
+            daemon=True  # Thread will be terminated when main thread exits
+        )
         sim_thread.start()
 
-        # Store simulation info
+        # Store thread and stop event in global registry
         running_simulations[sim_id] = {
             "thread": sim_thread,
             "stop_event": stop_event,
             "start_time": datetime.now().isoformat(),
-            "config": {
-                "db_url": db_url,
-                "update_interval": update_interval,
-                "access_intensity": access_intensity
-            }
+            "db_type": db_type,
+            "database": database,
+            "update_interval": update_interval
         }
 
         return {
             "status": "started",
             "simulation_id": sim_id,
-            "message": "Simulation started successfully"
+            "start_time": running_simulations[sim_id]["start_time"]
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error starting simulation: {str(e)}")
 
 
-@app.post("/simulation/{sim_id}/stop", response_model=Dict[str, Any], tags=["simulation"])
-async def stop_simulation(sim_id: str):
-    """Stop a running cache usage simulation"""
-    if sim_id not in running_simulations:
-        raise HTTPException(status_code=404, detail=f"Simulation {sim_id} not found")
+@app.post("/simulation/stop/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"])
+async def stop_simulation(simulation_id: str):
+    """Stop a running simulation"""
+    if simulation_id not in running_simulations:
+        raise HTTPException(status_code=404, detail=f"No simulation found with ID {simulation_id}")
 
     try:
         # Signal the thread to stop
-        running_simulations[sim_id]["stop_event"].set()
+        running_simulations[simulation_id]["stop_event"].set()
 
         # Wait for thread to finish (with timeout)
-        running_simulations[sim_id]["thread"].join(timeout=5)
+        running_simulations[simulation_id]["thread"].join(timeout=5.0)
 
-        # Clean up
-        simulation_info = running_simulations.pop(sim_id)
+        # Store end time
+        end_time = datetime.now().isoformat()
+
+        # Clean up entry
+        sim_data = running_simulations.pop(simulation_id)
 
         return {
             "status": "stopped",
-            "simulation_id": sim_id,
-            "runtime": str(datetime.now() - datetime.fromisoformat(simulation_info["start_time"]))
+            "simulation_id": simulation_id,
+            "start_time": sim_data["start_time"],
+            "end_time": end_time
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error stopping simulation: {str(e)}")
 
 
-@app.get("/simulation", response_model=List[Dict[str, Any]], tags=["simulation"])
-async def list_simulations():
-    """List all running simulations"""
-    return [
-        {
-            "simulation_id": sim_id,
-            "start_time": info["start_time"],
-            "runtime": str(datetime.now() - datetime.fromisoformat(info["start_time"])),
-            "config": info["config"]
+@app.get("/simulation/status", response_model=Dict[str, Any], tags=["simulation"])
+async def simulation_status():
+    """Get status of all running simulations"""
+    result = {}
+    for sim_id, data in running_simulations.items():
+        result[sim_id] = {
+            "db_type": data["db_type"],
+            "database": data["database"],
+            "update_interval": data["update_interval"],
+            "start_time": data["start_time"],
+            "running": data["thread"].is_alive()
         }
-        for sim_id, info in running_simulations.items()
-    ]
+    return {"simulations": result, "count": len(running_simulations)}
+
+
+@app.get("/simulation/status/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"])
+async def get_simulation_status(simulation_id: str):
+    """Get status of a specific simulation"""
+    if simulation_id not in running_simulations:
+        raise HTTPException(status_code=404, detail=f"No simulation found with ID {simulation_id}")
+
+    data = running_simulations[simulation_id]
+    return {
+        "simulation_id": simulation_id,
+        "db_type": data["db_type"],
+        "database": data["database"],
+        "update_interval": data["update_interval"],
+        "start_time": data["start_time"],
+        "running": data["thread"].is_alive()
+    }
 
 @app.get("/cache/derived/weights", response_model=Dict[str, Any], tags=["cache"])
 async def get_derived_data_weights(
-        db_url: str = Query("mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db"),
+        host: str = Query("ers-mariadb", description="Database hostname"),
+        port: int = Query(3306, description="Database port"),
+        user: str = Query("cacheuser", description="Database username"),
+        password: str = Query("cachepass", description="Database password"),
+        database: str = Query("cache_db", description="Database name"),
         endpoint: Optional[str] = Query(None, description="Filter by endpoint type")
 ):
     """Get current cache weights for derived data"""
     try:
-        # Parse connection parameters
-        match = re.match(r'mysql\+mysqlconnector://([^:]+):([^@]+)@([^/]+)/([^?]+)', db_url)
-        if not match:
-            raise ValueError("Invalid database URL format")
-
-        user, password, host_port, database = match.groups()
-        host = host_port.split(':')[0]
-
         import mysql.connector
 
         conn = mysql.connector.connect(
-            host=host, user=user, password=password, database=database
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            database=database
         )
         cursor = conn.cursor(dictionary=True)
 

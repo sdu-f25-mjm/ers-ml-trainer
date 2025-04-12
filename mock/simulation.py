@@ -1,27 +1,27 @@
+# database/simulation.py
 import logging
+import random
+import time
+import json
+from datetime import datetime, timedelta
+import numpy as np
 
-# Set up logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
-def simulate_derived_data_weights(host='ers-mariadb', user='cacheuser', password='cachepass', database='cache_db',
-                                  update_interval=5, run_duration=None, stop_event=None):
+def simulate_derived_data_weights(db_handler, update_interval=5, run_duration=None, stop_event=None):
     """
-    Simulate cache weights for derived data endpoints like aggregations and forecasts.
+    Simulate cache weights for derived data endpoints using any database handler.
 
-    This simulates how users interact with computed/aggregated data differently
-    than raw data, reflecting real-world access patterns.
+    Args:
+        db_handler: Database handler instance (MySQL, PostgreSQL, or SQLite)
+        update_interval: Time between updates in seconds
+        run_duration: Total simulation time in seconds (None for indefinite)
+        stop_event: Threading event for stopping simulation
     """
-    import time
-    from datetime import datetime, timedelta
-    import random
-    import numpy as np
-    import mysql.connector
-
-    logger.info(f"Starting derived data cache weight simulation on {host}")
+    logger.info(f"Starting derived data cache weight simulation")
     start_time = time.time()
+
 
     # Define endpoint types with their characteristics
     derived_endpoints = [
@@ -46,6 +46,7 @@ def simulate_derived_data_weights(host='ers-mariadb', user='cacheuser', password
             "time_relevance_decay": 0.1,
             "access_probability": 0.4
         },
+        # Additional endpoints can be added here
         {
             "name": "carbon_intensity",
             "volatility_range": (0.3, 0.7),
@@ -59,161 +60,42 @@ def simulate_derived_data_weights(host='ers-mariadb', user='cacheuser', password
             "complexity_range": (0.6, 0.8),
             "time_relevance_decay": 0.04,
             "access_probability": 0.25
-        },
-        {
-            "name": "renewable_share",
-            "volatility_range": (0.2, 0.6),
-            "complexity_range": (0.4, 0.7),
-            "time_relevance_decay": 0.03,
-            "access_probability": 0.45
-        },
-        {
-            "name": "consumption_patterns",
-            "volatility_range": (0.3, 0.5),
-            "complexity_range": (0.5, 0.8),
-            "time_relevance_decay": 0.02,
-            "access_probability": 0.35
-        },
-        {
-            "name": "production_mix",
-            "volatility_range": (0.3, 0.6),
-            "complexity_range": (0.5, 0.7),
-            "time_relevance_decay": 0.04,
-            "access_probability": 0.4
-        },
-        {
-            "name": "grid_balance",
-            "volatility_range": (0.5, 0.9),
-            "complexity_range": (0.7, 0.9),
-            "time_relevance_decay": 0.08,
-            "access_probability": 0.3
-        },
-        {
-            "name": "carbon_forecast",
-            "volatility_range": (0.6, 0.9),
-            "complexity_range": (0.7, 1.0),
-            "time_relevance_decay": 0.1,
-            "access_probability": 0.35
-        },
-        {
-            "name": "peak_demand_analysis",
-            "volatility_range": (0.5, 0.8),
-            "complexity_range": (0.6, 0.9),
-            "time_relevance_decay": 0.06,
-            "access_probability": 0.25
-        },
-        {
-            "name": "grid_stability_metrics",
-            "volatility_range": (0.7, 0.9),
-            "complexity_range": (0.8, 1.0),
-            "time_relevance_decay": 0.09,
-            "access_probability": 0.2
-        },
-        {
-            "name": "self_consumption_ratio",
-            "volatility_range": (0.2, 0.5),
-            "complexity_range": (0.4, 0.6),
-            "time_relevance_decay": 0.04,
-            "access_probability": 0.3
-        },
-        {
-            "name": "price_correlation",
-            "volatility_range": (0.4, 0.7),
-            "complexity_range": (0.7, 0.9),
-            "time_relevance_decay": 0.05,
-            "access_probability": 0.4
-        },
-        {
-            "name": "seasonal_patterns",
-            "volatility_range": (0.1, 0.4),
-            "complexity_range": (0.6, 0.8),
-            "time_relevance_decay": 0.01,
-            "access_probability": 0.25
-        },
-        {
-            "name": "renewable_forecast",
-            "volatility_range": (0.6, 0.9),
-            "complexity_range": (0.7, 0.9),
-            "time_relevance_decay": 0.08,
-            "access_probability": 0.35
-        },
-        {
-            "name": "import_export_balance",
-            "volatility_range": (0.3, 0.6),
-            "complexity_range": (0.5, 0.7),
-            "time_relevance_decay": 0.04,
-            "access_probability": 0.3
-        },
-        {
-            "name": "weather_impact_analysis",
-            "volatility_range": (0.6, 0.8),
-            "complexity_range": (0.7, 0.9),
-            "time_relevance_decay": 0.05,
-            "access_probability": 0.2
-        },
-        {
-            "name": "load_shifting_potential",
-            "volatility_range": (0.5, 0.8),
-            "complexity_range": (0.6, 0.9),
-            "time_relevance_decay": 0.06,
-            "access_probability": 0.25
-        },
-        {
-            "name": "transmission_losses",
-            "volatility_range": (0.2, 0.5),
-            "complexity_range": (0.5, 0.7),
-            "time_relevance_decay": 0.03,
-            "access_probability": 0.15
         }
     ]
 
     try:
-        conn = mysql.connector.connect(
-            host=host, user=user, password=password, database=database
-        )
+        # Create table if it doesn't exist - this is now handled in create_tables.py
 
-        # Create table if it doesn't exist
-        cursor = conn.cursor()
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS derived_data_cache_weights (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            endpoint VARCHAR(50),
-            parameter_hash VARCHAR(64),
-            request_pattern VARCHAR(255),
-            recency FLOAT,
-            usage_frequency FLOAT,
-            time_relevance FLOAT,
-            production_importance FLOAT,
-            volatility FLOAT,
-            complexity FLOAT,
-            calculated_priority FLOAT,
-            last_accessed DATETIME,
-            access_count INT,
-            INDEX(endpoint),
-            INDEX(parameter_hash)
-        )
-        """)
-        conn.commit()
-
-        # Generate initial data if table is empty
-        cursor.execute("SELECT COUNT(*) FROM derived_data_cache_weights")
-        count = cursor.fetchone()[0]
+        # Check if we need to initialize with data
+        result = db_handler.execute_query("SELECT COUNT(*) FROM derived_data_cache_weights")
+        count = 0
+        if result:
+            row = result.fetchone()
+            # Handle different result types based on handler
+            if hasattr(row, 'values'):
+                count = list(row.values())[0]  # Dict-like result
+            elif isinstance(row, dict):
+                count = row.get(list(row.keys())[0], 0)
+            elif isinstance(row, tuple):
+                count = row[0]  # Tuple result
 
         if count == 0:
             logger.info("Initializing derived data cache weights")
+            placeholder = db_handler.get_placeholder_symbol()
+
             # Generate sample requests for each endpoint
             for endpoint in derived_endpoints:
                 # Generate multiple parameter combinations per endpoint
-                for i in range(30):  # 30 variations per endpoint
+                for i in range(10):  # 10 variations per endpoint
                     params = generate_random_parameters(endpoint["name"])
                     param_hash = generate_parameter_hash(params)
 
-                    recency = np.random.beta(1.5, 5)
-                    usage_frequency = np.random.beta(1.2, 6)
-                    time_relevance = np.random.beta(2, 2)
-                    production_importance = np.random.beta(1.8, 3)
-                    volatility = np.random.uniform(*endpoint["volatility_range"])
-                    complexity = np.random.uniform(*endpoint["complexity_range"])
+                    recency = float(np.random.beta(1.5, 5))
+                    usage_frequency = float(np.random.beta(1.2, 6))
+                    time_relevance = float(np.random.beta(2, 2))
+                    production_importance = float(np.random.beta(1.8, 3))
+                    volatility = float(np.random.uniform(*endpoint["volatility_range"]))
+                    complexity = float(np.random.uniform(*endpoint["complexity_range"]))
 
                     weights = {
                         'recency': 0.25,
@@ -230,18 +112,24 @@ def simulate_derived_data_weights(host='ers-mariadb', user='cacheuser', password
 
                     last_accessed = datetime.now() - timedelta(minutes=np.random.randint(1, 10080))
 
-                    cursor.execute("""
+                    # Use parameterized query with correct placeholder format
+                    query = f"""
                     INSERT INTO derived_data_cache_weights (
                         endpoint, parameter_hash, request_pattern, recency, usage_frequency, 
                         time_relevance, production_importance, volatility, complexity,
                         calculated_priority, last_accessed, access_count
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (
+                    ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
+                             {placeholder}, {placeholder}, {placeholder}, {placeholder},
+                             {placeholder}, {placeholder}, {placeholder})
+                    """
+
+                    db_handler.execute_query(query, (
                         endpoint["name"], param_hash, str(params), recency, usage_frequency,
                         time_relevance, production_importance, volatility, complexity,
                         priority, last_accessed, np.random.randint(1, 50)
                     ))
-            conn.commit()
+
+            db_handler.commit()
 
         # Start simulation loop
         while (run_duration is None or (time.time() - start_time < run_duration)):
@@ -250,88 +138,92 @@ def simulate_derived_data_weights(host='ers-mariadb', user='cacheuser', password
                 logger.info("Stopping derived data simulation due to stop signal")
                 break
 
-            cursor = conn.cursor(dictionary=True)
+            placeholder = db_handler.get_placeholder_symbol()
 
             # Simulate access patterns across endpoints
+            now = datetime.now()  # Define now at the very start so it is in scope.
             for endpoint in derived_endpoints:
                 if random.random() <= endpoint["access_probability"]:
                     # This endpoint is being accessed this interval
 
                     # Get all entries for this endpoint
-                    cursor.execute(
-                        "SELECT * FROM derived_data_cache_weights WHERE endpoint = %s",
-                        (endpoint["name"],)
-                    )
-                    items = cursor.fetchall()
+                    query = f"SELECT * FROM derived_data_cache_weights WHERE endpoint = {placeholder}"
+                    cursor = db_handler.execute_query(query, (endpoint["name"],))
+                    if not cursor:
+                        continue
 
+                    items = cursor.fetchall()
                     if not items:
                         continue
 
+                    # Normalize items to dictionaries if they aren't already
+                    normalized_items = []
+                    for item in items:
+                        if isinstance(item, dict):
+                            normalized_items.append(item)
+                        elif hasattr(item, 'keys'):  # Dict-like object
+                            normalized_items.append({k: item[k] for k in item.keys()})
+                        elif isinstance(item, tuple) and hasattr(cursor, 'description'):
+                            # Convert tuple to dict using cursor description
+                            normalized_items.append({
+                                cursor.description[i][0]: item[i]
+                                for i in range(len(cursor.description))
+                            })
+
+                    if not normalized_items:
+                        continue
+
                     # Select a few items to "access"
-                    weights = [item['calculated_priority'] + 0.1 for item in items]
+                    weights = [item.get('calculated_priority', 0.5) + 0.1 for item in normalized_items]
                     accessed_items = random.choices(
-                        items,
+                        normalized_items,
                         weights=weights,
-                        k=min(3, len(items))
+                        k=min(3, len(normalized_items))
                     )
 
                     # Update accessed items
-                    now = datetime.now()
                     for item in accessed_items:
                         # Update statistics
-                        recency = min(1.0, item['recency'] * 0.7 + 0.3)
-                        frequency = min(1.0, item['usage_frequency'] + (1 / (item['access_count'] + 10)))
-
-                        # Time relevance decays based on endpoint characteristics
-                        time_relevance = max(0.1, item['time_relevance'] - endpoint["time_relevance_decay"] *
-                                             random.random())
-
-                        # Allow slight variation in other parameters
-                        volatility = max(0.1, min(1.0, item['volatility'] + np.random.normal(0, 0.02)))
-                        complexity = max(0.1, min(1.0, item['complexity'] + np.random.normal(0, 0.01)))
+                        recency = min(1.0, item.get('recency', 0.5) * 0.7 + 0.3)
+                        frequency = min(1.0,
+                                        item.get('usage_frequency', 0.5) + (1 / (item.get('access_count', 10) + 10)))
+                        time_relevance = max(0.1, item.get('time_relevance', 0.5) - endpoint[
+                            "time_relevance_decay"] * random.random())
+                        volatility = max(0.1, min(1.0, item.get('volatility', 0.5) + random.normalvariate(0, 0.02)))
+                        complexity = max(0.1, min(1.0, item.get('complexity', 0.5) + random.normalvariate(0, 0.01)))
 
                         weights = {
                             'recency': 0.25, 'access_frequency': 0.20, 'time_relevance': 0.15,
                             'production_importance': 0.15, 'volatility': 0.15, 'complexity': 0.10
                         }
 
-                        priority = calculate_priority(weights, recency, frequency,
-                                                      time_relevance, item['production_importance'],
-                                                      volatility, complexity)
+                        priority = calculate_priority(
+                            weights, recency, frequency, time_relevance,
+                            item.get('production_importance', 0.5), volatility, complexity
+                        )
 
-                        cursor.execute("""
+                        query = f"""
                         UPDATE derived_data_cache_weights SET
-                            recency = %s, usage_frequency = %s, time_relevance = %s,
-                            volatility = %s, complexity = %s, calculated_priority = %s,
-                            last_accessed = %s, access_count = access_count + 1
-                        WHERE id = %s
-                        """, (
+                            recency = {placeholder}, 
+                            usage_frequency = {placeholder}, 
+                            time_relevance = {placeholder},
+                            volatility = {placeholder}, 
+                            complexity = {placeholder}, 
+                            calculated_priority = {placeholder},
+                            last_accessed = {placeholder}, 
+                            access_count = access_count + 1
+                        WHERE id = {placeholder}
+                        """
+                        db_handler.execute_query(query, (
                             recency, frequency, time_relevance, volatility, complexity,
-                            priority, now, item['id']
+                            priority, now, item.get('id')
                         ))
 
-            conn.commit()
+            db_handler.commit()
             logger.info(f"Updated derived data weights at {now}")
-
-            # Decay the items that weren't accessed
-            if random.random() < 0.3:
-                cursor.execute("""
-                UPDATE derived_data_cache_weights 
-                SET recency = GREATEST(0.1, recency * 0.95),
-                    calculated_priority = (
-                        0.25 * GREATEST(0.1, recency * 0.95) +
-                        0.20 * usage_frequency +
-                        0.15 * time_relevance +
-                        0.15 * production_importance +
-                        0.15 * volatility +
-                        0.10 * complexity
-                    )
-                """)
-                conn.commit()
 
             time.sleep(update_interval)
 
-        conn.close()
         logger.info(f"Derived data simulation ended after {time.time() - start_time:.1f} seconds")
         return True
 
@@ -356,10 +248,6 @@ def generate_random_parameters(endpoint_name):
     }
     medium_range = {
         "from": (base_date - timedelta(days=random.randint(7, 30))).isoformat(),
-        "to": base_date.isoformat()
-    }
-    long_range = {
-        "from": (base_date - timedelta(days=random.randint(30, 90))).isoformat(),
         "to": base_date.isoformat()
     }
 
@@ -403,101 +291,6 @@ def generate_random_parameters(endpoint_name):
         params.update({
             "country": random.choice(["germany", "norway", "sweden", "netherlands"]),
             "flowType": random.choice(["import", "export", "net"])
-        })
-    elif endpoint_name == "renewable_share":
-        params.update(medium_range)
-        params.update({
-            "includeTypes": json.dumps(random.sample(["wind", "solar", "hydro", "biomass"], k=random.randint(1, 4))),
-            "resolution": random.choice(["hourly", "daily", "weekly"])
-        })
-    elif endpoint_name == "consumption_patterns":
-        params.update(long_range)
-        params.update({
-            "consumerType": random.choice(["residential", "commercial", "industrial", "all"]),
-            "pattern": random.choice(["daily", "weekly", "seasonal"])
-        })
-    elif endpoint_name == "production_mix":
-        params.update(medium_range)
-        params.update({
-            "aggregation": random.choice(["hourly", "daily", "weekly"]),
-            "showPercentage": random.choice([True, False])
-        })
-    elif endpoint_name == "grid_balance":
-        params.update(short_range)
-        params.update({
-            "includeExchange": random.choice([True, False]),
-            "resolution": random.choice(["15min", "hourly"])
-        })
-    elif endpoint_name == "carbon_forecast":
-        params.update({
-            "from": base_date.isoformat(),
-            "to": (base_date + timedelta(days=random.randint(1, 7))).isoformat(),
-            "resolution": random.choice(["hourly", "daily"])
-        })
-    elif endpoint_name == "peak_demand_analysis":
-        params.update(long_range)
-        params.update({
-            "threshold": random.randint(80, 95),
-            "includeWeather": random.choice([True, False])
-        })
-    elif endpoint_name == "grid_stability_metrics":
-        params.update(medium_range)
-        params.update({
-            "metricTypes": json.dumps(random.sample(["frequency", "voltage", "congestion", "reserves"],
-                                                    k=random.randint(1, 4))),
-            "criticalThreshold": random.uniform(0.7, 0.9)
-        })
-    elif endpoint_name == "self_consumption_ratio":
-        params.update(medium_range)
-        params.update({
-            "consumerSize": random.choice(["small", "medium", "large", "all"]),
-            "withStorage": random.choice([True, False])
-        })
-    elif endpoint_name == "price_correlation":
-        params.update(long_range)
-        params.update({
-            "correlationWith": random.choice(["wind", "solar", "demand", "temperature"]),
-            "lagHours": random.randint(0, 24)
-        })
-    elif endpoint_name == "seasonal_patterns":
-        params.update({
-            "year": random.randint(datetime.now().year - 3, datetime.now().year),
-            "patternType": random.choice(["production", "consumption", "prices"]),
-            "resolution": random.choice(["daily", "weekly", "monthly"])
-        })
-    elif endpoint_name == "renewable_forecast":
-        params.update({
-            "from": base_date.isoformat(),
-            "to": (base_date + timedelta(days=random.randint(1, 5))).isoformat(),
-            "types": json.dumps(random.sample(["wind", "solar"], k=random.randint(1, 2))),
-            "confidence": random.choice([80, 90, 95])
-        })
-    elif endpoint_name == "import_export_balance":
-        params.update(medium_range)
-        params.update({
-            "countries": json.dumps(random.sample(["germany", "norway", "sweden", "netherlands"],
-                                                  k=random.randint(1, 4))),
-            "aggregation": random.choice(["hourly", "daily", "weekly"])
-        })
-    elif endpoint_name == "weather_impact_analysis":
-        params.update(medium_range)
-        params.update({
-            "weatherType": json.dumps(random.sample(["temperature", "wind", "cloud_cover", "precipitation"],
-                                                    k=random.randint(1, 4))),
-            "impactOn": random.choice(["production", "consumption", "prices"])
-        })
-    elif endpoint_name == "load_shifting_potential":
-        params.update(medium_range)
-        params.update({
-            "sectorType": random.choice(["residential", "commercial", "industrial", "all"]),
-            "shiftHours": random.randint(1, 6),
-            "priceThreshold": random.uniform(30, 70)
-        })
-    elif endpoint_name == "transmission_losses":
-        params.update(medium_range)
-        params.update({
-            "gridLevel": random.choice(["transmission", "distribution", "all"]),
-            "includeReactiveLoading": random.choice([True, False])
         })
     else:
         # Fallback for any undefined endpoints

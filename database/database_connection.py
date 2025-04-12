@@ -1,18 +1,62 @@
-# database_connection.py
+# database/database_connection.py
 import logging
-import pandas as pd
-import os
+import random
+import time
+import urllib.parse
 from typing import List, Dict, Optional, Any, Union
+
+import pandas as pd
 from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, OperationalError, DatabaseError
 from sqlalchemy.pool import QueuePool
-import urllib.parse
 
 
+def retry_with_backoff(max_retries=5, initial_backoff=1, max_backoff=60):
+    """
+    Decorator that retries the function with exponential backoff on database errors.
+
+    Args:
+        max_retries: Maximum number of retry attempts
+        initial_backoff: Initial backoff time in seconds
+        max_backoff: Maximum backoff time in seconds
+    """
+
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            retries = 0
+            backoff = initial_backoff
+
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except (OperationalError, DatabaseError) as e:
+                    retries += 1
+                    if retries > max_retries:
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Max retries ({max_retries}) exceeded. Last error: {e}")
+                        raise
+
+                    # Calculate backoff with jitter
+                    jitter = random.uniform(0, 0.1 * backoff)
+                    sleep_time = min(backoff + jitter, max_backoff)
+
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Database connection failed. Retrying in {sleep_time:.2f}s ({retries}/{max_retries}). Error: {e}")
+
+                    time.sleep(sleep_time)
+                    backoff = min(backoff * 2, max_backoff)  # Exponential backoff
+
+        return wrapper
+
+    return decorator
+
+
+@retry_with_backoff()
 def create_database_connection(db_url: str) -> Engine:
     """
-    Create a SQLAlchemy database connection with connection pooling.
+    Create a SQLAlchemy database connection with connection pooling and retry logic.
 
     Args:
         db_url: Database connection URL
@@ -21,19 +65,21 @@ def create_database_connection(db_url: str) -> Engine:
         SQLAlchemy Engine instance
 
     Raises:
-        Exception: If connection fails
+        Exception: If connection fails after retries
     """
     logger = logging.getLogger(__name__)
 
     try:
-        # Create engine with connection pooling
+        # Create engine with connection pooling and improved parameters
         engine = create_engine(
             db_url,
             poolclass=QueuePool,
             pool_size=5,
             max_overflow=10,
             pool_timeout=30,
-            pool_recycle=1800  # Recycle connections every 30 minutes
+            pool_recycle=1800,  # Recycle connections every 30 minutes
+            pool_pre_ping=True,  # Check connection validity before use
+            connect_args={'connect_timeout': 10}  # Timeout for connection attempts
         )
 
         # Test connection
@@ -51,6 +97,56 @@ def create_database_connection(db_url: str) -> Engine:
     except Exception as e:
         logger.error(f"Unexpected error connecting to database: {e}")
         raise
+
+
+def check_connection_health(engine: Engine) -> bool:
+    """
+    Check if database connection is healthy.
+
+    Args:
+        engine: SQLAlchemy Engine instance
+
+    Returns:
+        True if connection is healthy, False otherwise
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1")).fetchone()
+        return True
+    except Exception as e:
+        logger.warning(f"Database connection health check failed: {e}")
+        return False
+
+
+def get_connection_with_fallback(engine: Engine) -> Optional[Engine]:
+    """
+    Get a database connection, attempting to recover from failures.
+
+    Args:
+        engine: SQLAlchemy Engine instance
+
+    Returns:
+        Working Engine instance or None if connection cannot be established
+    """
+    if check_connection_health(engine):
+        return engine
+
+    logger = logging.getLogger(__name__)
+    logger.warning("Database connection unhealthy, attempting to dispose and reconnect")
+
+    try:
+        # Dispose existing pool and create a new one
+        engine.dispose()
+
+        # Test if connection works after disposal
+        if check_connection_health(engine):
+            logger.info("Successfully re-established database connection")
+            return engine
+    except Exception as e:
+        logger.error(f"Failed to re-establish database connection: {e}")
+
+    return None
 
 
 def mask_connection_url(db_url: str) -> str:
@@ -119,17 +215,8 @@ def table_exists(engine: Engine, table_name: str) -> bool:
         return False
 
 
-def get_table_schema(engine: Engine, table_name: str) -> Dict[str, Any]:
-    """
-    Get schema information for a table.
-
-    Args:
-        engine: SQLAlchemy Engine instance
-        table_name: Name of the table
-
-    Returns:
-        Dictionary containing table schema information
-    """
+# database/database_connection.py
+def get_table_schema(engine, table_name: str) -> Dict[str, Any]:
     logger = logging.getLogger(__name__)
     try:
         inspector = inspect(engine)
@@ -138,7 +225,8 @@ def get_table_schema(engine: Engine, table_name: str) -> Dict[str, Any]:
             return {}
 
         columns = inspector.get_columns(table_name)
-        primary_keys = inspector.get_primary_keys(table_name)
+        pk_constraint = inspector.get_pk_constraint(table_name)
+        primary_keys = pk_constraint.get('constrained_columns', [])
         foreign_keys = inspector.get_foreign_keys(table_name)
 
         return {
