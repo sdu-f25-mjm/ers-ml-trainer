@@ -9,7 +9,6 @@ import numpy as np
 
 from core.gpu_utils import is_cuda_available, print_system_info, configure_gpu_environment
 
-
 # Configure GPU environment if available and not forcing CPU
 if is_cuda_available():
     configure_gpu_environment()  # Optionally pass a gpu_id if needed
