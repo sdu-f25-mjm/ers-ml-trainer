@@ -33,7 +33,6 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.cpu
-          target: cpu
           tags: |
             ghcr.io/${{ github.repository_owner }}/ers-ml-trainer:latest
             ghcr.io/${{ github.repository_owner }}/ers-ml-trainer:cpu-${{ github.sha }}
@@ -46,7 +45,6 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.gpu
-          target: gpu
           tags: |
             ghcr.io/${{ github.repository_owner }}/ers-ml-trainer:gpu-latest
             ghcr.io/${{ github.repository_owner }}/ers-ml-trainer:gpu-${{ github.sha }}

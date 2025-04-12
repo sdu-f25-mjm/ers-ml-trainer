@@ -24,19 +24,16 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.cpu
-          target: cpu
           tags: ers-ml-trainer:cpu-test
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Run linting for CPU
-        run: |
-          docker run --rm ers-ml-trainer:cpu-test flake8 .
+        run: docker run --rm ers-ml-trainer:cpu-test flake8 .
 
       - name: Run tests for CPU
-        run: |
-          docker run --rm ers-ml-trainer:cpu-test pytest
+        run: docker run --rm ers-ml-trainer:cpu-test pytest
 
       - name: Run application health check for CPU
         run: |
@@ -60,19 +57,16 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.gpu
-          target: gpu
           tags: ers-ml-trainer:gpu-test
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Run linting for GPU
-        run: |
-          docker run --rm ers-ml-trainer:gpu-test flake8 .
+        run: docker run --rm ers-ml-trainer:gpu-test flake8 .
 
       - name: Run tests for GPU
-        run: |
-          docker run --rm ers-ml-trainer:gpu-test pytest
+        run: docker run --rm ers-ml-trainer:gpu-test pytest
 
       - name: Run application health check for GPU
         run: |
