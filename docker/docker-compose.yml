@@ -1,13 +1,12 @@
 services:
   ers-ml-trainer:
+    image: ers-ml-trainer:gpu
     build:
       context: ..
       dockerfile: docker/Dockerfile.gpu
     container_name: ers-ml-trainer
     ports:
       - "8000:8000"
-    networks:
-      - ers-network
     volumes:
       - ../logs:/app/logs
       - ../models:/app/models
@@ -30,7 +29,7 @@ services:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu]
+              capabilities: [ gpu ]
     command: bash -c "pip install sqlalchemy && python main.py"
     depends_on:
       - ers-mariadb
@@ -47,10 +46,8 @@ services:
       - db_data:/var/lib/mysql
     ports:
       - "3306:3306"
-    networks:
-      - ers-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "cacheuser", "-pcachepass"]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "cacheuser", "-pcachepass" ]
       interval: 10s
       timeout: 5s
       retries: 5

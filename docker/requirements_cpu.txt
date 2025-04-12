@@ -1,0 +1,23 @@
+# docker/requirements_cpu.txt
+fastapi>=0.115.12
+uvicorn>=0.34.0
+pydantic>=2.11.3
+sqlalchemy>=2.0.40
+pandas>=2.2.3
+starlette>=0.46.1
+numpy<2.2.0
+python-dotenv>=1.1.0
+matplotlib>=3.10.1
+gymnasium>=1.1.1
+psycopg2-binary>=2.9.10
+tensorflow_cpu>=2.19.0
+# CPU-only version of PyTorch
+# torch==2.6.0+cpu installed in docker directly
+# Then stable-baselines3 after PyTorch is installed
+stable-baselines3>=2.6.0
+# Use only the needed extras, not the full extras
+stable-baselines3[tensorboard]==2.6.0
+python-multipart>=0.0.20
+psutil>=7.0.0
+typing-extensions>=4.13.2
+mysql-connector-python>=9.2.0

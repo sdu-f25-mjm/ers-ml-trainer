@@ -19,6 +19,11 @@ lib64/
 parts/
 sdist/
 var/
+/models
+/model_checkpoints
+/logs
+/cache_eval_results
+/cache_rl_optimization.egg-info
 wheels/
 share/python-wheels/
 *.egg-info/

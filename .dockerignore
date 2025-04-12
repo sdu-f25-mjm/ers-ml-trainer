@@ -1,0 +1,33 @@
+# Exclude Git related files
+.git
+.gitignore
+
+# Exclude Python cache files
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Exclude virtual environments
+venv
+.venv
+
+# Exclude build and distribution directories
+build
+dist
+
+# Exclude logs
+logs
+*.log
+
+# Exclude Dockerfile context files if needed
+docker-compose.yml
+README.md
+docker/models
+docker/Dockerfile.cpu
+docker/Dockerfile.gpu
+models
+model_checkpoints
+cache_eval_results
+cache_rl_optimization.egg-info
+.github
