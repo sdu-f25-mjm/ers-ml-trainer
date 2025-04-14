@@ -7,6 +7,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
+from core.utils import build_db_url
 from database.database_connection import (
     create_database_connection,
     get_available_tables,
@@ -14,7 +15,8 @@ from database.database_connection import (
     load_data_from_database,
     get_table_schema
 )
-
+db_url = build_db_url()  # or fallback if db_url is None
+engine = create_database_connection(db_url)
 
 class MariaDBCacheEnvironment(gym.Env):
     """
@@ -52,7 +54,7 @@ class MariaDBCacheEnvironment(gym.Env):
         self.cache_size = cache_size
         self.max_queries = max_queries
         self.db_url = db_url or os.environ.get('DB_URL',
-                                               'mysql+mysqlconnector://cacheuser:cachepass@localhost:3306/cache_db')
+                                               'mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db')
 
         # Create database connection
         self.logger.info(f"Connecting to database: {self.db_url}")

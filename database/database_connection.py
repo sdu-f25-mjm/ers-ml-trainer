@@ -1,15 +1,14 @@
 # database/database_connection.py
 import logging
-import random
 import time
-import urllib.parse
 from typing import List, Dict, Optional, Any, Union
 
 import pandas as pd
 from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import SQLAlchemyError, OperationalError, DatabaseError
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.exc import SQLAlchemyError, OperationalError
+
+from core.utils import build_db_url
 
 
 def retry_with_backoff(max_retries=5, initial_backoff=1, max_backoff=60):
@@ -39,7 +38,7 @@ def retry_with_backoff(max_retries=5, initial_backoff=1, max_backoff=60):
 
 
 @retry_with_backoff()
-def create_database_connection(db_url: str) -> Engine:
+def create_database_connection() -> Engine:
     """
     Create a SQLAlchemy database connection with connection pooling and retry logic.
 
@@ -56,7 +55,7 @@ def create_database_connection(db_url: str) -> Engine:
     try:
         # Create engine with connection pooling and improved parameters, using valid keyword for connection timeout.
         engine = create_engine(
-            db_url,
+            db_url=build_db_url(),
             pool_size=5,
             max_overflow=10,
             pool_timeout=30,

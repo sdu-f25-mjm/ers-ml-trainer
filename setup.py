@@ -31,7 +31,7 @@ setup(
         "python-multipart>=0.0.20",
         "mysql-connector-python>=9.2.0",
         "psutil>=7.0.0",
-        "tensorflow_cpu>=2.19.0",
+        # "tensorflow_cpu>=2.19.0",
     ],
     entry_points={
         "console_scripts": [

@@ -36,13 +36,11 @@ def setup_mock_database(force_recreate: bool):
     try:
         from mock.mock_db import generate_mock_database
 
-        # Use environment variables or defaults
         host = os.environ.get('DB_HOST', 'ers-mariadb')
         user = os.environ.get('DB_USER', 'cacheuser')
         password = os.environ.get('DB_PASSWORD', 'cachepass')
         database = os.environ.get('DB_NAME', 'cache_db')
 
-        # Check if we're using Docker
         if os.environ.get('DOCKER_ENV') == 'true':
             host = 'ers-mariadb'
             logger.info(f"Docker environment detected, using database host: {host}")
@@ -55,7 +53,7 @@ def setup_mock_database(force_recreate: bool):
             password=password,
             database=database,
             port=3306,
-            hours=24  # Smaller dataset for faster initialization
+            hours=24
         )
 
         if success:
@@ -70,31 +68,23 @@ def setup_mock_database(force_recreate: bool):
 
 def create_app():
     """Configure and return the app for use by uvicorn."""
-    # Load environment variables
     load_dotenv()
-
-    # Set up logging with default level
     setup_logging(os.environ.get("LOG_LEVEL", "INFO"))
 
-    # Show system info
-    from core.gpu_utils import print_system_info
+    from core.utils import print_system_info
     print_system_info()
 
-    # Set up mock database if requested
     if os.environ.get("MOCK_DB", "").lower() == "true":
         setup_mock_database(os.environ.get("FORCE_RECREATE_DB", "").lower() == "true")
 
-    # Import and return the FastAPI app
     from api.app import app
     return app
 
 
 def main():
     """Main entry point for the application when run as a script."""
-    # Load environment variables
     load_dotenv()
 
-    # Parse command line arguments
     parser = argparse.ArgumentParser(description="Cache RL Optimization API Server")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind the server to")
@@ -106,24 +96,19 @@ def main():
 
     args = parser.parse_args()
 
-    # Set up logging
     setup_logging(args.log_level)
     logger = logging.getLogger(__name__)
 
-    # Show system info
-    from core.gpu_utils import print_system_info
+    from core.utils import print_system_info
     print_system_info()
 
-    # Set up mock database if requested
     if args.mock_db:
         setup_mock_database(args.force_recreate_db)
 
     logger.info(f"Starting server on {args.host}:{args.port}")
 
-    # Import the API app
     try:
         import uvicorn
-        # Start the FastAPI application using uvicorn
         uvicorn.run(
             "api.app:app",
             host=args.host,
@@ -136,7 +121,6 @@ def main():
         sys.exit(1)
 
 
-# This is important for running with uvicorn directly
 app = create_app()
 
 if __name__ == "__main__":

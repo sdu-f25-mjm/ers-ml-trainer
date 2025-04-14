@@ -10,17 +10,31 @@ from typing import List, Optional, Dict, Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
-from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, text
+from pydantic import BaseModel
+from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
-from core.model_training import train_cache_model, evaluate_cache_model
 from core.visualization import visualize_cache_performance
 from mock.mock_db import generate_mock_database
 from mock.simulation import simulate_derived_data_weights
+from core.utils import is_cuda_available, build_db_url, \
+    build_custom_db_url  # lightweight utility (does not import torch)
 
-# Global variables to track simulation threads
+# Global dictionaries to hold simulation & training job state
 running_simulations = {}
+training_jobs = {}
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("logs/application.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+# Create FastAPI app
 app = FastAPI(
     title="Cache RL Optimization API",
     description="API for training and deploying RL models for database cache optimization",
@@ -28,22 +42,6 @@ app = FastAPI(
     docs_url="/"
 )
 API = os.getenv("API_URL", "localhost:8000")
-
-
-# Data models for API requests/responses
-class TrainingRequest(BaseModel):
-    db_url: str = Field("mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db", description="Database connection URL")
-    algorithm: str = Field("dqn", description="RL algorithm to use (dqn, a2c, ppo)")
-    cache_size: int = Field(10, description="Size of the cache")
-    max_queries: int = Field(500, description="Maximum number of queries for training")
-    timesteps: int = Field(100000, description="Training timesteps")
-    feature_columns: Optional[List[str]] = Field([""], description="Feature columns to use")
-    optimized_for_cpu: bool = Field(True, description="Optimize for CPU training")
-    use_gpu: bool = Field(True, description="Use GPU for training if available")
-    gpu_id: Optional[int] = Field(None, description="Specific GPU ID to use (if multiple)")
-    batch_size: Optional[int] = Field(None, description="Batch size for training")
-    learning_rate: Optional[float] = Field(None, description="Learning rate for training")
-
 
 class TrainingResponse(BaseModel):
     job_id: str
@@ -60,19 +58,14 @@ class JobStatus(BaseModel):
     metrics: Optional[Dict[str, Any]] = None
 
 
-# Store training jobs
-training_jobs = {}
-
-
 def get_job_status(job_id: str):
     if job_id not in training_jobs:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
     return training_jobs[job_id]
 
 
-# Add this function for database connection management
 def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backoff=30):
-    """Create a database connection with retry logic for graceful failure handling"""
+    """Create a database engine with retry logic."""
     logger = logging.getLogger(__name__)
     retries = 0
     backoff = initial_backoff
@@ -80,23 +73,18 @@ def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backof
     while True:
         try:
             logger.info(f"Attempting to connect to database (attempt {retries + 1}/{max_retries})...")
-
-            # Create engine with connection pooling and improved parameters
             engine = create_engine(
                 db_url,
                 pool_size=5,
                 max_overflow=10,
                 pool_timeout=30,
-                pool_recycle=1800,  # Recycle connections every 30 minutes
-                pool_pre_ping=True,  # Check connection validity before use
-                connect_args={'connect_timeout': 10}  # Timeout for connection attempts
+                pool_recycle=1800,
+                pool_pre_ping=True,
+                connect_args={'connect_timeout': 10}
             )
 
-            # Test connection
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-
-            # Mask password in URL for logging
             masked_url = db_url.replace("://", "://***:***@", 1).split("@")[-1]
             logger.info(f"Successfully connected to database at {masked_url}")
             return engine
@@ -106,50 +94,65 @@ def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backof
             if retries > max_retries:
                 logger.error(f"Failed to connect to database after {max_retries} attempts: {e}")
                 return None
-
-            # Add jitter to backoff to prevent connection storms
             jitter = random.uniform(0, 0.1 * backoff)
             sleep_time = backoff + jitter
-
             logger.warning(f"Database connection failed. Retrying in {sleep_time:.2f}s. Error: {e}")
             time.sleep(sleep_time)
-
-            # Exponential backoff with cap
             backoff = min(backoff * 2, max_backoff)
         except Exception as e:
             logger.error(f"Unexpected error connecting to database: {e}")
             return None
 
+
 def start_training_in_process(job_id, db_url, algorithm, cache_size, max_queries,
                               timesteps, feature_columns, optimized_for_cpu,
                               use_gpu, gpu_id, batch_size, learning_rate):
-    # Run the training job asynchronously inside the new process
+    # Run training job asynchronously in a process
     asyncio.run(run_training_job(
         job_id, db_url, algorithm, cache_size, max_queries, timesteps,
         feature_columns, optimized_for_cpu, use_gpu, gpu_id, batch_size, learning_rate
     ))
 
-# Add a startup event to test database connectivity
+# Utility function to get column names from the derived_data_cache_weights table
+def get_derived_cache_columns(db_url: str) -> List[str]:
+    try:
+        engine = create_engine(db_url)
+        inspector = inspect(engine)
+        columns = inspector.get_columns("derived_data_cache_weights")
+        return [col["name"] for col in columns]
+    except Exception as e:
+        raise Exception(f"Could not retrieve columns: {e}")
+
+
+
 @app.on_event("startup")
 async def startup_db_client():
-    """Initialize database connection on startup"""
     logger = logging.getLogger(__name__)
     logger.info("Testing database connection on startup...")
-
-    db_url = os.getenv("DB_URL", "mysql+mysqlconnector://cacheuser:cachepass@localhost:3306/cache_db")
+    db_url = build_db_url()
     engine = get_database_connection(db_url)
-
     if engine is None:
         logger.warning("Could not connect to database, but service will continue to run")
     else:
         logger.info("Database connection test successful")
 
 
-
 @app.get("/health")
 def health_check():
-    """Health check endpoint for monitoring"""
     return {"status": "ok"}
+
+# Example endpoint that returns available columns
+@app.get("/available-columns", response_model=Dict[str, List[str]], tags=["database"])
+def available_columns(
+        db_type: str = Query("mysql+mysqlconnector", description="Database type: mysql, postgres, or sqlite"),
+        host: str = Query("ers-mariadb", description="Database hostname"),
+        port: int = Query(3306, description="Database port"),
+        user: str = Query("cacheuser", description="Database username"),
+        password: str = Query("cachepass", description="Database password"),
+        database: str = Query("cache_db", description="Database name")):
+    db_url = build_custom_db_url(db_type, host, port, database, user, password)
+    columns = get_derived_cache_columns(db_url)
+    return {"available_columns": columns}
 
 @app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new training job")
 async def start_training(
@@ -165,16 +168,18 @@ async def start_training(
     max_queries: int = Query(500, description="Maximum number of queries for training"),
     timesteps: int = Query(100000, description="Training timesteps"),
     feature_columns: Optional[List[str]] = Query([""], description="Feature columns to use"),
-    optimized_for_cpu: bool = Query(True, description="Optimize for CPU training"),
-    use_gpu: bool = Query(True, description="Use GPU for training if available"),
+    optimized_for_cpu: bool = Query(is_cuda_available(), description="Optimize for CPU training"),
+    use_gpu: bool = Query(False, description="Use GPU for training if available"),
     gpu_id: Optional[int] = Query(None, description="Specific GPU ID to use (if multiple)"),
     batch_size: Optional[int] = Query(None, description="Batch size for training"),
     learning_rate: Optional[float] = Query(None, description="Learning rate for training")
 ):
     job_id = str(uuid4())
     start_time = datetime.now().isoformat()
-    db_url: str = f"{db_type}://{user}:{password}@{host}:{port}/{database}"
+    db_url = build_custom_db_url(db_type, host, port, database, user, password)
 
+    logger.info(f"Starting training job: {job_id}")
+    logger.info(f"Database URL: {db_url}")
 
     training_jobs[job_id] = {
         "job_id": job_id,
@@ -210,41 +215,40 @@ async def start_training(
 
 @app.get("/jobs/{job_id}", response_model=JobStatus, tags=["jobs"], description="Get the status of a training job")
 async def get_job(job_id: str):
-    """Get the status of a training job"""
     return get_job_status(job_id)
 
 
 @app.get("/jobs", response_model=List[JobStatus], tags=["jobs"], description="List all training jobs")
 async def list_jobs():
-    """List all training jobs"""
     return list(training_jobs.values())
 
 
 @app.post("/evaluate/{job_id}", response_model=Dict[str, Any], tags=["evaluation"],
           description="Evaluate a trained model from a completed job")
-async def evaluate_job_model(job_id: str,
-                             steps: int = 1000,
-                             use_gpu: bool = True):
-    """Evaluate a trained model from a completed job"""
+async def evaluate_job_model(job_id: str, steps: int = 1000, use_gpu: bool = True):
     job = get_job_status(job_id)
-
     if job["status"] != "completed":
         raise HTTPException(status_code=400, detail=f"Job {job_id} is not completed")
-
     if not job["model_path"]:
         raise HTTPException(status_code=400, detail=f"No model path found for job {job_id}")
+
+    # Dynamically import the correct evaluation function based on use_gpu and availability.
+    if use_gpu and is_cuda_available():
+        from core.model_training_gpu import evaluate_cache_model
+    else:
+        from core.model_training_cpu import evaluate_cache_model
 
     results = evaluate_cache_model(
         model_path=job["model_path"],
         eval_steps=steps,
-        db_url=None,  # Will use the default mock DB
+        db_url=None,  # default mock DB will be used inside the function
         use_gpu=use_gpu
     )
 
     try:
-        visualization_path = visualize_cache_performance(results)
-        if visualization_path:
-            results["visualization"] = visualization_path
+        vis_path = visualize_cache_performance(results)
+        if vis_path:
+            results["visualization"] = vis_path
     except Exception as e:
         results["visualization_error"] = str(e)
 
@@ -252,28 +256,23 @@ async def evaluate_job_model(job_id: str,
 
 
 @app.post("/export/{job_id}", response_model=Dict[str, Any], tags=["deployment"])
-async def export_job_model(
-        job_id: str,
-        output_dir: str = "best_model"
-):
-    """Export a trained model to TorchScript format for production deployment"""
+async def export_job_model(job_id: str, output_dir: str = "best_model"):
     job = get_job_status(job_id)
-
     if job["status"] != "completed":
         raise HTTPException(status_code=400, detail=f"Job {job_id} is not completed")
-
     if not job["model_path"]:
         raise HTTPException(status_code=400, detail=f"No model path found for job {job_id}")
-
     try:
-        from core.model_training import export_model_to_torchscript
+        # For export, we will use the GPU version if available
+        if is_cuda_available():
+            from core.model_training_gpu import export_model_to_torchscript
+        else:
+            from core.model_training_cpu import export_model_to_torchscript
 
-        # Export the model to TorchScript format
         output_path = export_model_to_torchscript(
             model_path=job["model_path"],
             output_dir=output_dir
         )
-
         return {
             "job_id": job_id,
             "original_model": job["model_path"],
@@ -299,15 +298,16 @@ async def run_training_job(
         batch_size: Optional[int] = None,
         learning_rate: Optional[float] = None
 ):
-    """Run the training job in the background with GPU support"""
     try:
         training_jobs[job_id]["status"] = "running"
 
-        # Force CPU mode if specifically requested
-        if not use_gpu:
+        # If use_gpu is not requested or not available, force CPU training.
+        if not use_gpu or not is_cuda_available():
             optimized_for_cpu = True
+            from core.model_training_cpu import train_cache_model
+        else:
+            from core.model_training_gpu import train_cache_model
 
-        # Train the model
         model_path = train_cache_model(
             db_url=db_url,
             algoritme=algorithm,
@@ -315,13 +315,17 @@ async def run_training_job(
             max_queries=max_queries,
             timesteps=timesteps,
             feature_columns=feature_columns,
-            optimeret_for_cpu=optimized_for_cpu,
             gpu_id=gpu_id if use_gpu else None,
             batch_size=batch_size,
             learning_rate=learning_rate
         )
 
-        # Evaluate the model
+        # Evaluate the trained model using the same module that was used for training.
+        if use_gpu and is_cuda_available():
+            from core.model_training_gpu import evaluate_cache_model
+        else:
+            from core.model_training_cpu import evaluate_cache_model
+
         eval_results = evaluate_cache_model(
             model_path=model_path,
             eval_steps=1000,
@@ -329,15 +333,12 @@ async def run_training_job(
             use_gpu=use_gpu
         )
 
-        # Visualization
         try:
-            visualize_path = visualize_cache_performance(eval_results)
-            eval_results["visualization"] = visualize_path
+            vis_path = visualize_cache_performance(eval_results)
+            eval_results["visualization"] = vis_path
         except Exception as e:
-            eval_results["visualization"] = None
             eval_results["visualization_error"] = str(e)
 
-        # Update job status
         training_jobs[job_id].update({
             "status": "completed",
             "end_time": datetime.now().isoformat(),
@@ -353,6 +354,7 @@ async def run_training_job(
             "error": str(e),
             "traceback": traceback.format_exc()
         })
+
 
 @app.post("/db/seed", response_model=Dict[str, Any], tags=["database"])
 async def seed_database(
@@ -405,18 +407,16 @@ async def start_simulation(
         if sim_id in running_simulations:
             return {"status": "already_running", "simulation_id": sim_id}
 
-        # Get the appropriate database handler
-        from mock.mock_db import get_db_handler
-        db = get_db_handler(db_type)
-
-        # Connect to database
-        if db_type == 'sqlite':
-            success = db.connect('', 0, '', '', database)
-        else:
-            success = db.connect(host, port, user, password, database)
+        # Create database connection
+        db_url = build_custom_db_url(db_type, host, port, database, user, password)
+        success = get_database_connection(db_url)
 
         if not success:
             raise HTTPException(status_code=500, detail=f"Failed to connect to {db_type} database")
+
+        # Create database engine
+        engine = create_engine(db_url)
+        db = engine.connect()
 
         # Create stop event for this simulation
         stop_event = threading.Event()

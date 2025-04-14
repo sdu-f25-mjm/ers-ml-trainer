@@ -1,74 +1,70 @@
-# core/model_training.py
+# core/model_training_gpu.py
 import json
 import logging
 import os
 from datetime import datetime
 
 import numpy as np
-# Remove torch and tensorflow imports from here
 
-from core.gpu_utils import is_cuda_available, print_system_info, configure_gpu_environment
+from core.utils import is_cuda_available, print_system_info, configure_gpu_environment
 
-# Configure GPU environment if available and not forcing CPU
-if is_cuda_available():
-    configure_gpu_environment()  # Optionally pass a gpu_id if needed
-    device = "cuda"
-else:
-    device = "cpu"
+# Ensure a GPU is available – exit if not.
+if not is_cuda_available():
+    raise EnvironmentError("CUDA is not available. This version is optimized for GPU usage only.")
+
+# Import torch now since we know CUDA is available
+import torch
+configure_gpu_environment()  # Optionally pass a gpu_id if needed
+device = "cuda"
 
 print(f"Using {device} device")
 
 
 class CacheFeatureExtractor:
     """
-    Custom feature extractor for cache observations with GPU optimization
-    Lazily imported only when torch is available
+    Custom feature extractor for cache observations with GPU optimization.
+    This version assumes that torch is available.
     """
 
     def __new__(cls, *args, **kwargs):
-        try:
-            import torch.nn as nn
-            from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+        import torch.nn as nn
+        from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-            class TorchFeatureExtractor(BaseFeaturesExtractor):
-                def __init__(self, observation_space, features_dim=128):
-                    super().__init__(observation_space, features_dim)
-                    n_input = int(np.prod(observation_space.shape))
+        class TorchFeatureExtractor(BaseFeaturesExtractor):
+            def __init__(self, observation_space, features_dim=128):
+                super().__init__(observation_space, features_dim)
+                n_input = int(np.prod(observation_space.shape))
+                self.network = nn.Sequential(
+                    nn.Linear(n_input, 256),
+                    nn.ReLU(),
+                    nn.LayerNorm(256),
+                    nn.Linear(256, features_dim),
+                    nn.ReLU(),
+                )
 
-                    self.network = nn.Sequential(
-                        nn.Linear(n_input, 256),
-                        nn.ReLU(),
-                        nn.LayerNorm(256),
-                        nn.Linear(256, features_dim),
-                        nn.ReLU(),
-                    )
+            def forward(self, observations):
+                return self.network(observations)
 
-                def forward(self, observations):
-                    return self.network(observations)
-
-            return TorchFeatureExtractor(*args, **kwargs)
-        except ImportError:
-            logging.getLogger(__name__).warning("PyTorch not available, using default feature extractor")
-            return None
+        return TorchFeatureExtractor(*args, **kwargs)
 
 
 def export_model_to_torchscript(model_path, output_dir="best_model"):
     """
-    Export trained stable-baselines3 RL model to TorchScript format for production deployment
+    Export trained stable-baselines3 RL model to TorchScript format for production deployment.
+    This function is optimized for GPU usage.
     """
     logger = logging.getLogger(__name__)
 
     try:
-        import torch
         from stable_baselines3 import DQN, A2C, PPO
     except ImportError:
-        logger.error("PyTorch or stable-baselines3 not installed, cannot export model")
+        logger.error("stable-baselines3 not installed, cannot export model")
         return None
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
-    # Determine model type from filename
+    # Determine model type from filename and load model
     if "ppo" in model_path.lower():
         model = PPO.load(model_path)
     elif "a2c" in model_path.lower():
@@ -88,8 +84,7 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
         policy_net = model.policy  # Fallback
 
     # Create example input tensor matching observation space shape
-    example_input = torch.zeros((1, model.observation_space.shape[0]),
-                                dtype=torch.float32)
+    example_input = torch.zeros((1, model.observation_space.shape[0]), dtype=torch.float32)
 
     try:
         # Export to TorchScript via tracing
@@ -118,54 +113,40 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
 
 
 def configure_gpu_environment(gpu_id=None):
-    """Configure GPU environment for optimal training performance"""
     logger = logging.getLogger(__name__)
-
-    # Print system information
     print_system_info()
 
-    # Check CUDA availability without importing torch if possible
+    # Since this version is for GPU-only, exit if CUDA isn't available.
     if not is_cuda_available():
-        logger.warning("CUDA not available. Using CPU for training.")
-        return False
+        logger.error("CUDA is not available. This version requires GPU.")
+        raise EnvironmentError("CUDA is not available.")
 
     try:
-        # Only import torch when we know CUDA is available
-        import torch
         import tensorflow as tf
     except ImportError:
-        logger.warning("PyTorch or TensorFlow not installed. Using CPU for training.")
-        return False
+        logger.warning("TensorFlow not installed. Continuing with GPU configuration for PyTorch only.")
 
-    # Log GPU information
     gpu_count = torch.cuda.device_count()
     logger.info(f"Found {gpu_count} CUDA device(s)")
-
     for i in range(gpu_count):
         logger.info(f"GPU {i}: {torch.cuda.get_device_name(i)}")
 
-    # Set GPU device if specified
     if gpu_id is not None and gpu_id < gpu_count:
         torch.cuda.set_device(gpu_id)
         logger.info(f"Using GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
 
-    # Configure TensorFlow GPUs
     try:
+        import tensorflow as tf
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
-            try:
-                for gpu in gpus:
-                    tf.config.experimental.set_memory_growth(gpu, True)
-                logger.info(f"TensorFlow GPU memory growth enabled")
-
-                if gpu_id is not None and gpu_id < len(gpus):
-                    tf.config.set_visible_devices(gpus[gpu_id], 'GPU')
-            except RuntimeError as e:
-                logger.error(f"TensorFlow GPU configuration error: {e}")
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logger.info("TensorFlow GPU memory growth enabled")
+            if gpu_id is not None and gpu_id < len(gpus):
+                tf.config.set_visible_devices(gpus[gpu_id], 'GPU')
     except Exception as e:
         logger.warning(f"Failed to configure TensorFlow: {e}")
 
-    # Optimize PyTorch
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
@@ -174,62 +155,54 @@ def configure_gpu_environment(gpu_id=None):
 
 
 def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
-                      feature_columns=None, timesteps=100000, optimeret_for_cpu=False,
-                      gpu_id=None, batch_size=None, learning_rate=None):
-    """Train a cache optimization RL model with GPU/CUDA support"""
+                      feature_columns=None, timesteps=100000, gpu_id=None,
+                      batch_size=None, learning_rate=None):
+    """
+    Train the cache model using GPU-optimized settings.
+    This function assumes that a GPU is available.
+    """
     logger = logging.getLogger(__name__)
 
-    # Import only when function is called
     try:
         import tensorflow as tf
     except ImportError:
-        logger.warning("TensorFlow not installed")
+        logger.warning("TensorFlow not installed, continuing with GPU training using PyTorch.")
 
-    try:
-        from stable_baselines3 import DQN, A2C, PPO
-        from stable_baselines3.common.callbacks import EvalCallback
-        import torch
-    except ImportError:
-        logger.error("Required ML libraries not installed: stable-baselines3 or torch")
-        return None
+    # Since GPU is required, verify availability and configure environment.
+    if not is_cuda_available():
+        logger.error("CUDA is not available. Training requires a GPU.")
+        raise EnvironmentError("CUDA is not available.")
+    has_gpu = configure_gpu_environment(gpu_id)
 
-    # Configure directories
-    os.makedirs("models", exist_ok=True)
-    os.makedirs("model_checkpoints", exist_ok=True)
+    # Import GPU-specific libraries
+    import torch
+    initial_gpu_mem = torch.cuda.memory_allocated(0) / (1024 * 1024)
+    logger.info(f"Initial GPU memory: {initial_gpu_mem:.2f} MB")
 
-    # Configure GPU if not optimizing for CPU
-    has_gpu = False
-    if not optimeret_for_cpu:
-        has_gpu = configure_gpu_environment(gpu_id)
-
-    device = "cuda" if has_gpu else "cpu"
+    device = "cuda"
     logger.info(f"Starting training with {algoritme.upper()} algorithm on {device.upper()}")
 
-    # Import environment only when needed
     from core.cache_environment import create_mariadb_cache_env
-
-    # Validate algorithm
     algoritme = algoritme.lower()
     if algoritme not in ["dqn", "a2c", "ppo"]:
         logger.warning(f"Unknown algorithm '{algoritme}', falling back to DQN")
         algoritme = "dqn"
 
-    # Set optimal hyperparameters based on device
+    # Use GPU-optimized hyperparameters
     if batch_size is None:
         batch_size = {
-            "dqn": 128 if has_gpu else 64,
-            "a2c": 64 if has_gpu else 32,
-            "ppo": 256 if has_gpu else 64
+            "dqn": 128,
+            "a2c": 64,
+            "ppo": 256
         }[algoritme]
 
     if learning_rate is None:
         learning_rate = {
-            "dqn": 0.0005 if has_gpu else 0.0003,
-            "a2c": 0.001 if has_gpu else 0.0007,
-            "ppo": 0.0003 if has_gpu else 0.0002
+            "dqn": 0.0005,
+            "a2c": 0.001,
+            "ppo": 0.0003
         }[algoritme]
 
-    # Configure environments
     env = create_mariadb_cache_env(
         db_url=db_url,
         cache_size=cache_size,
@@ -244,7 +217,7 @@ def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
         max_queries=max_queries
     )
 
-    # Configure callbacks
+    from stable_baselines3.common.callbacks import EvalCallback
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path="model_checkpoints/",
@@ -255,80 +228,69 @@ def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
         n_eval_episodes=5
     )
 
-    # Configure network architecture
-    if has_gpu:
-        policy_kwargs = {
-            "net_arch": [256, 256],
-            "features_extractor_class": CacheFeatureExtractor,
-            "features_extractor_kwargs": {"features_dim": 128}
-        }
-    else:
-        policy_kwargs = {"net_arch": [128, 128]}
+    policy_kwargs = {
+        "net_arch": [256, 256],
+        "features_extractor_class": CacheFeatureExtractor,
+        "features_extractor_kwargs": {"features_dim": 128}
+    }
 
-    # Base model parameters
     model_params = {
         "verbose": 1,
         "device": device,
         "policy_kwargs": policy_kwargs
     }
 
-    # Record starting time and resources
+    from datetime import datetime
     start_time = datetime.now()
-    if has_gpu:
-        initial_gpu_mem = torch.cuda.memory_allocated(0) / (1024 * 1024)
-        logger.info(f"Initial GPU memory: {initial_gpu_mem:.2f} MB")
+    initial_gpu_mem = torch.cuda.memory_allocated(0) / (1024 * 1024)
+    logger.info(f"Initial GPU memory: {initial_gpu_mem:.2f} MB")
 
-    # Create model based on algorithm
     if algoritme == "a2c":
+        from stable_baselines3 import A2C
         model = A2C(
             "MlpPolicy", env,
             learning_rate=learning_rate,
-            n_steps=16 if has_gpu else 8,
+            n_steps=16,
             ent_coef=0.01,
             **model_params
         )
     elif algoritme == "ppo":
+        from stable_baselines3 import PPO
         model = PPO(
             "MlpPolicy", env,
             learning_rate=learning_rate,
-            n_steps=512 if has_gpu else 256,
+            n_steps=512,
             batch_size=batch_size,
-            n_epochs=10 if has_gpu else 4,
+            n_epochs=10,
             **model_params
         )
-    else:  # Default to DQN
+    else:
+        from stable_baselines3 import DQN
         model = DQN(
             "MlpPolicy", env,
             learning_rate=learning_rate,
-            buffer_size=50000 if has_gpu else 10000,
-            learning_starts=2000 if has_gpu else 1000,
+            buffer_size=50000,
+            learning_starts=2000,
             batch_size=batch_size,
-            target_update_interval=1000 if has_gpu else 500,
+            target_update_interval=1000,
             **model_params
         )
 
-    # Train model
     logger.info(f"Starting training with {algoritme.upper()} for {timesteps} timesteps...")
     model.learn(total_timesteps=timesteps, callback=eval_callback)
 
-    # Calculate training time
     training_time = datetime.now() - start_time
     logger.info(f"Training completed in {training_time}")
 
-    # Log final GPU memory if applicable
-    if has_gpu:
-        final_gpu_mem = torch.cuda.memory_allocated(0) / (1024 * 1024)
-        logger.info(f"Final GPU memory: {final_gpu_mem:.2f} MB")
-        # Free GPU memory
-        torch.cuda.empty_cache()
+    final_gpu_mem = torch.cuda.memory_allocated(0) / (1024 * 1024)
+    logger.info(f"Final GPU memory: {final_gpu_mem:.2f} MB")
+    torch.cuda.empty_cache()
 
-    # Save model with metadata
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_name = f"models/database_cache_model_{algoritme}_{device}_{cache_size}_{timestamp}"
     model.save(model_name)
     logger.info(f"Model saved to: {model_name}")
 
-    # Save model metadata
     metadata = {
         "algorithm": algoritme,
         "device": device,
@@ -344,7 +306,6 @@ def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
     with open(f"{model_name}.meta.json", "w") as f:
         json.dump(metadata, f, indent=2)
 
-    # Clean up
     env.close()
     eval_env.close()
 
@@ -352,35 +313,21 @@ def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
 
 
 def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=True):
-    """Evaluate the trained model with GPU support"""
+    """
+    Evaluate the trained cache model using GPU.
+    This function assumes GPU usage is available.
+    """
     logger = logging.getLogger(__name__)
 
-    # Import libraries only when needed
-    try:
-        from stable_baselines3 import DQN, A2C, PPO
-    except ImportError:
-        logger.error("stable-baselines3 not installed, cannot evaluate model")
-        return None
+    import torch
+    if not torch.cuda.is_available() or not use_gpu:
+        raise EnvironmentError("CUDA is not available or GPU evaluation is disabled.")
 
-    # Import torch only if needed
-    try:
-        import torch
-        has_gpu = torch.cuda.is_available() and use_gpu
-    except ImportError:
-        logger.warning("PyTorch not installed, using CPU for evaluation")
-        has_gpu = False
-
-    # Configure GPU if requested and available
-    if has_gpu:
-        configure_gpu_environment()
-        device = "cuda"
-    else:
-        device = "cpu"
-
+    configured = configure_gpu_environment()
+    device = "cuda" if configured else "cpu"
     logger.info(f"Evaluating model on {device.upper()}")
 
-    # Load model
-    logger.info(f"Loading model from: {model_path}")
+    from stable_baselines3 import PPO, A2C, DQN
     if "ppo" in model_path.lower():
         model = PPO.load(model_path, device=device)
     elif "a2c" in model_path.lower():
@@ -390,19 +337,14 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=True)
 
     logger.info(f"Model loaded successfully on {device}!")
 
-    # Use default database if not specified
     if db_url is None:
         db_url = "sqlite:///mock/mock_database.db"
 
-    # Extract cache size from model path if available
     import re
-    cache_size_match = re.search(r'cache_(\d+)', model_path)
-    cache_size = int(cache_size_match.group(1)) if cache_size_match else 10
+    match = re.search(r'cache_(\d+)', model_path)
+    cache_size = int(match.group(1)) if match else 10
 
-    # Import environment only when needed
     from core.cache_environment import create_mariadb_cache_env
-
-    # Create evaluation environment
     env = create_mariadb_cache_env(
         db_url=db_url,
         cache_size=cache_size
@@ -410,7 +352,6 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=True)
 
     obs, _ = env.reset()
 
-    # Evaluation variables
     total_reward = 0
     done = False
     step_count = 0
@@ -419,55 +360,43 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=True)
     rewards = []
     inference_times = []
 
-    # Start evaluation
+    from datetime import datetime
     eval_start = datetime.now()
 
     while not done and step_count < eval_steps:
-        # Measure inference time
         pred_start = datetime.now()
         action, _ = model.predict(obs, deterministic=True)
-        inference_time = (datetime.now() - pred_start).total_seconds() * 1000  # ms
-        inference_times.append(inference_time)
+        inference_times.append((datetime.now() - pred_start).total_seconds() * 1000)
 
-        # Track cache hit/miss
         prev_hits = env.cache_hits
         obs, reward, terminated, truncated, info = env.step(action)
-        is_hit = 1 if env.cache_hits > prev_hits else 0
-        hit_history.append(is_hit)
+        hit_history.append(1 if env.cache_hits > prev_hits else 0)
 
-        # Track rewards
         total_reward += reward
         rewards.append(reward)
 
-        # Check if done
         done = terminated or truncated
         step_count += 1
 
-        # Log progress
         if step_count % 100 == 0:
             current_hit_rate = info['cache_hit_rate']
             saved_hit_rates.append(current_hit_rate)
-            avg_inference = sum(inference_times[-100:]) / min(100, len(inference_times[-100:]))
-            logger.info(f"Step {step_count}, hit rate: {current_hit_rate:.4f}, "
-                        f"avg inference: {avg_inference:.2f}ms")
+            avg_inference = sum(inference_times[-100:]) / len(inference_times[-100:])
+            logger.info(f"Step {step_count}, hit rate: {current_hit_rate:.4f}, avg inference: {avg_inference:.2f}ms")
 
-    # Calculate evaluation time
     eval_time = (datetime.now() - eval_start).total_seconds()
     logger.info(f"Evaluation completed in {eval_time:.2f} seconds")
 
-    # Clean up
     env.close()
-    if has_gpu:
-        torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
 
-    # Calculate moving average for hit rates
+    import numpy as np
     window_size = 25
     moving_hit_rates = [
         np.mean(hit_history[max(0, i - window_size):i + 1])
         for i in range(len(hit_history))
     ]
 
-    # Return results
     return {
         'hit_rates': saved_hit_rates,
         'hit_history': hit_history,

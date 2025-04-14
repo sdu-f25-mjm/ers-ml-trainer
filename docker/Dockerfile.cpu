@@ -1,50 +1,24 @@
-# Base image with minimal runtime dependencies
-FROM python:3.11-slim-bullseye AS base
+FROM python:3.11-slim-bullseye
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     TZ=UTC \
     PYTHONPATH=/app \
     DOCKER_ENV=true
+
 WORKDIR /app
 
-# Builder stage: install build dependencies, create virtual environment, and install Python packages
-FROM base AS builder
-WORKDIR /build
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends libmariadb-dev curl && \
-    rm -rf /var/lib/apt/lists/*
-# Copy only what is needed; use .dockerignore to omit unnecessary files
-COPY docker/requirements_cpu.txt .
-# Create virtual environment and install dependencies (pre-built binaries are used via pip)
-RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    /opt/venv/bin/pip install --no-cache-dir -r requirements_cpu.txt && \
-    rm -rf /root/.cache
-
-# Final stage: production-ready image with runtime dependencies and minimal artifacts
-FROM python:3.11-slim-bullseye AS final
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    TZ=UTC \
-    PYTHONPATH=/app \
-    DOCKER_ENV=true
-WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libmariadb-dev && \
     rm -rf /var/lib/apt/lists/*
-# Copy the optimized virtual environment from the builder stage
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-# Copy only application code; .dockerignore helps avoid unwanted directories
+
+COPY docker/requirements_cpu.txt .
+
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel pip && \
+    pip install torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements_cpu.txt && \
+    rm -rf /root/.cache
+
 COPY . .
-# Create necessary directories and a non‑root user in one combined RUN command
-RUN mkdir -p /app/logs /app/models /app/model_checkpoints /app/cache_eval_results && \
-    useradd -m -r -u 1000 appuser && \
-    chown -R appuser:appuser /app
-USER appuser
+
 EXPOSE 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

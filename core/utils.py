@@ -1,15 +1,9 @@
-# core/gpu_utils.py
-import logging
+# core/utils.py
 import subprocess
 import psutil
-
-
-# core/gpu_utils.py
-
 import logging
 import os
 
-from torch import cuda  # Assuming torch is available
 
 def configure_gpu_environment():
     """
@@ -127,3 +121,23 @@ def print_system_info():
                 logger.info(f"  Memory: {gpu['used_memory_mb']:.0f}MB used / {gpu['total_memory_mb']:.0f}MB total")
             if "temperature_c" in gpu:
                 logger.info(f"  Temperature: {gpu['temperature_c']}°C")
+
+def build_db_url():
+    """
+    Build the database URL from environment variables.
+    Defaults are provided for local development.
+    """
+    driver = os.getenv("DB_DRIVER", "mysql+mysqlconnector")
+    host = os.getenv("DB_HOST", "localhost")
+    port = os.getenv("DB_PORT", "3306")
+    dbname = os.getenv("DB_NAME", "cache_db")
+    user = os.getenv("DB_USER", "cacheuser")
+    password = os.getenv("DB_PASSWORD", "cachepass")
+    return f"{driver}://{user}:{password}@{host}:{port}/{dbname}"
+
+def build_custom_db_url(driver, host, port, dbname, user, password):
+    """
+    Build the database URL from environment variables.
+    Defaults are provided for local development.
+    """
+    return f"{driver}://{user}:{password}@{host}:{port}/{dbname}"
