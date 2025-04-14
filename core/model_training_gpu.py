@@ -154,9 +154,9 @@ def configure_gpu_environment(gpu_id=None):
     return True
 
 
-def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
-                      feature_columns=None, timesteps=100000, gpu_id=None,
-                      batch_size=None, learning_rate=None):
+def train_cache_model_gpu(db_url, algoritme="dqn", cache_size=10, max_queries=500,
+                          feature_columns=None, timesteps=100000, gpu_id=None,
+                          batch_size=None, learning_rate=None):
     """
     Train the cache model using GPU-optimized settings.
     This function assumes that a GPU is available.
@@ -312,7 +312,7 @@ def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
     return model_name
 
 
-def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=True):
+def evaluate_cache_model_gpu(model_path, eval_steps=1000, db_url=None, use_gpu=True):
     """
     Evaluate the trained cache model using GPU.
     This function assumes GPU usage is available.

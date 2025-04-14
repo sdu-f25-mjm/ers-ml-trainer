@@ -1,5 +1,6 @@
 # database/database_connection.py
 import logging
+import random
 import time
 from typing import List, Dict, Optional, Any, Union
 
@@ -38,31 +39,38 @@ def retry_with_backoff(max_retries=5, initial_backoff=1, max_backoff=60):
 
 
 @retry_with_backoff()
-def create_database_connection() -> Engine:
+def create_database_connection(db_url=None) -> Engine:
     """
     Create a SQLAlchemy database connection with connection pooling and retry logic.
 
     Args:
-        db_url: Database connection URL
-
-    Returns:
-        SQLAlchemy Engine instance
-
-    Raises:
-        Exception: If connection fails after retries
+        db_url: Optional database URL. If not provided, will use build_db_url()
     """
     logger = logging.getLogger(__name__)
     try:
-        # Create engine with connection pooling and improved parameters, using valid keyword for connection timeout.
-        engine = create_engine(
-            db_url=build_db_url(),
-            pool_size=5,
-            max_overflow=10,
-            pool_timeout=30,
-            pool_recycle=1800,  # Recycle connections every 30 minutes
-            pool_pre_ping=True,
-            connect_args={'connection_timeout': 10}  # Updated keyword argument
-        )
+        if db_url is None:
+            db_url = build_db_url()
+
+        # Set connection arguments based on database type
+        connect_args = {}
+        if db_url.startswith('mysql') or db_url.startswith('mariadb'):
+            connect_args['connect_timeout'] = 10
+
+        # Common engine parameters for all database types
+        engine_params = {
+            'pool_size': 5,
+            'max_overflow': 10,
+            'pool_timeout': 30,
+            'pool_recycle': 1800,
+            'pool_pre_ping': True
+        }
+
+        # Add connect_args only if they're not empty
+        if connect_args:
+            engine_params['connect_args'] = connect_args
+
+        engine = create_engine(db_url, **engine_params)
+
         # Test connection
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
@@ -74,7 +82,6 @@ def create_database_connection() -> Engine:
     except Exception as e:
         logger.error(f"Unexpected error connecting to database: {e}")
         raise
-
 
 def check_connection_health(engine: Engine) -> bool:
     """
@@ -204,3 +211,55 @@ def execute_query(
     except Exception as e:
         logger.error(f"Error executing query: {e}")
         raise
+
+
+def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backoff=30):
+    """Create a database engine with retry logic."""
+    logger = logging.getLogger(__name__)
+    retries = 0
+    backoff = initial_backoff
+
+    while True:
+        try:
+            logger.info(f"Attempting to connect to database (attempt {retries + 1}/{max_retries})...")
+
+            # Set connection arguments based on database type
+            connect_args = {}
+            if db_url.startswith('mysql') or db_url.startswith('mariadb'):
+                connect_args['connect_timeout'] = 10
+
+            # Common engine parameters for all database types
+            engine_params = {
+                'pool_size': 5,
+                'max_overflow': 10,
+                'pool_timeout': 30,
+                'pool_recycle': 1800,
+                'pool_pre_ping': True
+            }
+
+            # Add connect_args only if they're not empty
+            if connect_args:
+                engine_params['connect_args'] = connect_args
+
+            engine = create_engine(db_url, **engine_params)
+
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            masked_url = db_url.replace("://", "://***:***@", 1).split("@")[-1]
+            logger.info(f"Successfully connected to database at {masked_url}")
+            return engine
+
+        except (SQLAlchemyError, OperationalError) as e:
+            # Rest of your existing retry logic
+            retries += 1
+            if retries > max_retries:
+                logger.error(f"Failed to connect to database after {max_retries} attempts: {e}")
+                return None
+            jitter = random.uniform(0, 0.1 * backoff)
+            sleep_time = backoff + jitter
+            logger.warning(f"Database connection failed. Retrying in {sleep_time:.2f}s. Error: {e}")
+            time.sleep(sleep_time)
+            backoff = min(backoff * 2, max_backoff)
+        except Exception as e:
+            logger.error(f"Unexpected error connecting to database: {e}")
+            return None

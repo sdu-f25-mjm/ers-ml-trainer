@@ -14,7 +14,10 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
+from core.model_training_cpu import train_cache_model_cpu, evaluate_cache_model_cpu
+from core.model_training_gpu import train_cache_model_gpu, evaluate_cache_model_gpu
 from core.visualization import visualize_cache_performance
+from database.database_connection import get_database_connection
 from mock.mock_db import generate_mock_database
 from mock.simulation import simulate_derived_data_weights
 from core.utils import is_cuda_available, build_db_url, \
@@ -64,53 +67,103 @@ def get_job_status(job_id: str):
     return training_jobs[job_id]
 
 
-def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backoff=30):
-    """Create a database engine with retry logic."""
-    logger = logging.getLogger(__name__)
-    retries = 0
-    backoff = initial_backoff
+async def run_training_job(
+        job_id: str,
+        db_url: str,
+        algorithm: str,
+        cache_size: int,
+        max_queries: int,
+        timesteps: int,
+        feature_columns: Optional[List[str]],
+        use_gpu: bool = True,
+        gpu_id: Optional[int] = None,
+        batch_size: Optional[int] = None,
+        learning_rate: Optional[float] = None
+):
+    try:
+        logger.info(f"Running training job {job_id} with algorithm {algorithm}")
+        training_jobs[job_id]["status"] = "running"
 
-    while True:
-        try:
-            logger.info(f"Attempting to connect to database (attempt {retries + 1}/{max_retries})...")
-            engine = create_engine(
-                db_url,
-                pool_size=5,
-                max_overflow=10,
-                pool_timeout=30,
-                pool_recycle=1800,
-                pool_pre_ping=True,
-                connect_args={'connect_timeout': 10}
+        # If use_gpu is not requested or not available, force CPU training.
+        logger.info(f"is_cuda_available: {is_cuda_available()}, use_gpu: {use_gpu}")
+        if is_cuda_available() and use_gpu:
+            logger.info(f"Training job {job_id} with algorithm {algorithm} using GPU")
+            model_path = train_cache_model_gpu(
+                db_url=db_url,
+                algoritme=algorithm,
+                cache_size=cache_size,
+                max_queries=max_queries,
+                timesteps=timesteps,
+                feature_columns=feature_columns,
+                gpu_id=gpu_id if use_gpu else None,
+                batch_size=batch_size,
+                learning_rate=learning_rate
+            )
+            logger.info(f"Evaluating model using GPU")
+            eval_results = evaluate_cache_model_gpu(
+                model_path=model_path,
+                eval_steps=1000,
+                db_url=db_url,
+                use_gpu=use_gpu
             )
 
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-            masked_url = db_url.replace("://", "://***:***@", 1).split("@")[-1]
-            logger.info(f"Successfully connected to database at {masked_url}")
-            return engine
+        else:
+            logger.info(f"Training job {job_id} with algorithm {algorithm} using CPU")
+            model_path = train_cache_model_cpu(
+                db_url=db_url,
+                algoritme=algorithm,
+                cache_size=cache_size,
+                max_queries=max_queries,
+                timesteps=timesteps,
+                feature_columns=feature_columns,
+                batch_size=batch_size,
+                learning_rate=learning_rate
+            )
+            logger.info(f"Evaluating model using CPU")
+            eval_results = evaluate_cache_model_cpu(
+                model_path=model_path,
+                eval_steps=1000,
+                db_url=db_url
+            )
+            logger.info(f"Training job {job_id} completed successfully. Model saved at {model_path}")
 
-        except (SQLAlchemyError, OperationalError) as e:
-            retries += 1
-            if retries > max_retries:
-                logger.error(f"Failed to connect to database after {max_retries} attempts: {e}")
-                return None
-            jitter = random.uniform(0, 0.1 * backoff)
-            sleep_time = backoff + jitter
-            logger.warning(f"Database connection failed. Retrying in {sleep_time:.2f}s. Error: {e}")
-            time.sleep(sleep_time)
-            backoff = min(backoff * 2, max_backoff)
+
+        logger.info(f"Training job {job_id} completed successfully. Model saved at {model_path}")
+        # Evaluate the trained model using the same module that was used for training.
+
+        logger.info(f"Evaluation results: {eval_results}")
+
+        try:
+            vis_path = visualize_cache_performance(eval_results)
+            eval_results["visualization"] = vis_path
         except Exception as e:
-            logger.error(f"Unexpected error connecting to database: {e}")
-            return None
+            eval_results["visualization_error"] = str(e)
 
+        training_jobs[job_id].update({
+            "status": "completed",
+            "end_time": datetime.now().isoformat(),
+            "model_path": model_path,
+            "metrics": eval_results
+        })
+
+    except Exception as e:
+        import traceback
+        training_jobs[job_id].update({
+            "status": "failed",
+            "end_time": datetime.now().isoformat(),
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        })
 
 def start_training_in_process(job_id, db_url, algorithm, cache_size, max_queries,
                               timesteps, feature_columns, optimized_for_cpu,
                               use_gpu, gpu_id, batch_size, learning_rate):
+    """Start training in a separate process."""
+    logger.info(f"Starting training for job {job_id}")
     # Run training job asynchronously in a process
     asyncio.run(run_training_job(
         job_id, db_url, algorithm, cache_size, max_queries, timesteps,
-        feature_columns, optimized_for_cpu, use_gpu, gpu_id, batch_size, learning_rate
+        feature_columns, use_gpu, gpu_id, batch_size, learning_rate
     ))
 
 # Utility function to get column names from the derived_data_cache_weights table
@@ -175,11 +228,11 @@ async def start_training(
     learning_rate: Optional[float] = Query(None, description="Learning rate for training")
 ):
     job_id = str(uuid4())
+    logger.info(f"Starting training job 276: {job_id}")
     start_time = datetime.now().isoformat()
     db_url = build_custom_db_url(db_type, host, port, database, user, password)
-
-    logger.info(f"Starting training job: {job_id}")
     logger.info(f"Database URL: {db_url}")
+
 
     training_jobs[job_id] = {
         "job_id": job_id,
@@ -189,6 +242,7 @@ async def start_training(
         "model_path": None,
         "metrics": None
     }
+    logger.info("Training job added to queue")
 
     background_tasks.add_task(
         start_training_in_process,
@@ -234,11 +288,11 @@ async def evaluate_job_model(job_id: str, steps: int = 1000, use_gpu: bool = Tru
 
     # Dynamically import the correct evaluation function based on use_gpu and availability.
     if use_gpu and is_cuda_available():
-        from core.model_training_gpu import evaluate_cache_model
+        from core.model_training_gpu import evaluate_cache_model_gpu
     else:
-        from core.model_training_cpu import evaluate_cache_model
+        from core.model_training_cpu import evaluate_cache_model_cpu
 
-    results = evaluate_cache_model(
+    results = evaluate_cache_model_cpu(
         model_path=job["model_path"],
         eval_steps=steps,
         db_url=None,  # default mock DB will be used inside the function
@@ -284,76 +338,7 @@ async def export_job_model(job_id: str, output_dir: str = "best_model"):
         raise HTTPException(status_code=500, detail=f"Failed to export model: {str(e)}")
 
 
-async def run_training_job(
-        job_id: str,
-        db_url: str,
-        algorithm: str,
-        cache_size: int,
-        max_queries: int,
-        timesteps: int,
-        feature_columns: Optional[List[str]],
-        optimized_for_cpu: bool,
-        use_gpu: bool = True,
-        gpu_id: Optional[int] = None,
-        batch_size: Optional[int] = None,
-        learning_rate: Optional[float] = None
-):
-    try:
-        training_jobs[job_id]["status"] = "running"
 
-        # If use_gpu is not requested or not available, force CPU training.
-        if not use_gpu or not is_cuda_available():
-            optimized_for_cpu = True
-            from core.model_training_cpu import train_cache_model
-        else:
-            from core.model_training_gpu import train_cache_model
-
-        model_path = train_cache_model(
-            db_url=db_url,
-            algoritme=algorithm,
-            cache_size=cache_size,
-            max_queries=max_queries,
-            timesteps=timesteps,
-            feature_columns=feature_columns,
-            gpu_id=gpu_id if use_gpu else None,
-            batch_size=batch_size,
-            learning_rate=learning_rate
-        )
-
-        # Evaluate the trained model using the same module that was used for training.
-        if use_gpu and is_cuda_available():
-            from core.model_training_gpu import evaluate_cache_model
-        else:
-            from core.model_training_cpu import evaluate_cache_model
-
-        eval_results = evaluate_cache_model(
-            model_path=model_path,
-            eval_steps=1000,
-            db_url=db_url,
-            use_gpu=use_gpu
-        )
-
-        try:
-            vis_path = visualize_cache_performance(eval_results)
-            eval_results["visualization"] = vis_path
-        except Exception as e:
-            eval_results["visualization_error"] = str(e)
-
-        training_jobs[job_id].update({
-            "status": "completed",
-            "end_time": datetime.now().isoformat(),
-            "model_path": model_path,
-            "metrics": eval_results
-        })
-
-    except Exception as e:
-        import traceback
-        training_jobs[job_id].update({
-            "status": "failed",
-            "end_time": datetime.now().isoformat(),
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        })
 
 
 @app.post("/db/seed", response_model=Dict[str, Any], tags=["database"])

@@ -10,7 +10,18 @@ from stable_baselines3.common.callbacks import EvalCallback
 
 from datetime import datetime
 
+from core.cache_environment import create_mariadb_cache_env
 from core.utils import print_system_info
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("logs/application.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # In this CPU-only version, we force the device to be CPU.
 # Optionally, print system info to verify hardware.
@@ -70,20 +81,16 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
 
 
 
-def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
-                      feature_columns=None, timesteps=100000, optimeret_for_cpu=True,
-                      gpu_id=None, batch_size=None, learning_rate=None):
+def train_cache_model_cpu(db_url, algoritme="dqn", cache_size=10, max_queries=500,
+                          feature_columns=None, timesteps=100000
+                          , batch_size=None, learning_rate=None):
     """
     Train the cache model using CPU-only settings.
     """
-    logger = logging.getLogger(__name__)
-
 
     # Force CPU-only training; ignore GPU-related configuration.
-    has_gpu = False  # Do not use GPU in this version.
     logger.info("Starting training on CPU.")
 
-    from core.cache_environment import create_mariadb_cache_env
     algoritme = algoritme.lower()
     if algoritme not in ["dqn", "a2c", "ppo"]:
         logger.warning(f"Unknown algorithm '{algoritme}', falling back to DQN")
@@ -200,7 +207,7 @@ def train_cache_model(db_url, algoritme="dqn", cache_size=10, max_queries=500,
     return model_name
 
 
-def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False):
+def evaluate_cache_model_cpu(model_path, eval_steps=1000, db_url=None):
     """
     Evaluate the trained cache model using CPU.
     """
