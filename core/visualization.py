@@ -52,13 +52,21 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
         ax2.legend()
 
     # Add metadata
-    plt.figtext(0.5, 0.01,
-                f"Evaluated on {device_used.upper()} | " +
-                f"Avg Inference: {evaluation_results.get('avg_inference_time_ms', 0):.2f}ms | " +
-                f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                ha="center", fontsize=10, bbox={"facecolor": "orange", "alpha": 0.2, "pad": 5})
-
     plt.tight_layout()
+
+    # Add more evaluation metrics to the figure annotation
+    evaluation_time = evaluation_results.get('evaluation_time_seconds', 0)
+    total_reward = evaluation_results.get('total_reward', 0)
+    avg_inference = evaluation_results.get('avg_inference_time_ms', 0)
+
+    plt.figtext(
+        0.5, 0.01,
+        f"Evaluated on {device_used.upper()} | Avg Inference: {avg_inference:.2f}ms | "
+        f"Evaluation Time: {evaluation_time:.2f}s | Total Reward: {total_reward:.2f} | "
+        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        ha="center", fontsize=10,
+        bbox={"facecolor": "orange", "alpha": 0.2, "pad": 5}
+    )
 
     # Save figure
     filename = f"cache_performance_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"

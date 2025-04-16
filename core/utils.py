@@ -141,3 +141,63 @@ def build_custom_db_url(driver, host, port, dbname, user, password):
     Defaults are provided for local development.
     """
     return f"{driver}://{user}:{password}@{host}:{port}/{dbname}"
+
+
+def list_available_models(models_dir="models"):
+    """
+    Find and list all available trained models in the models directory.
+
+    Args:
+        models_dir: Directory where models are saved
+
+    Returns:
+        List of dictionaries containing model information
+    """
+    import os
+    import re
+    import json
+
+    logger = logging.getLogger(__name__)
+
+    if not os.path.exists(models_dir):
+        logger.warning(f"Models directory '{models_dir}' does not exist")
+        return []
+
+    models = []
+    model_pattern = re.compile(r"database_cache_model_(\w+)_(\w+)_(\d+)_(\d{8}_\d{6})$")
+
+    for filename in os.listdir(models_dir):
+        filepath = os.path.join(models_dir, filename)
+
+        # Skip directories and non-zip files (SB3 models are zip files)
+        if os.path.isdir(filepath) or not filepath.endswith(".zip"):
+            continue
+
+        match = model_pattern.match(filename.replace(".zip", ""))
+        if not match:
+            continue
+
+        algorithm, device, cache_size, timestamp = match.groups()
+
+        # Try to load metadata if available
+        metadata = {}
+        metadata_path = f"{filepath.replace('.zip', '')}.meta.json"
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+            except json.JSONDecodeError:
+                pass
+
+        models.append({
+            "path": filepath,
+            "algorithm": algorithm,
+            "device": device,
+            "cache_size": int(cache_size),
+            "timestamp": timestamp,
+            "created_at": metadata.get("trained_at", timestamp),
+            "metadata": metadata
+        })
+
+    # Sort by timestamp, newest first
+    return sorted(models, key=lambda x: x["timestamp"], reverse=True)

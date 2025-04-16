@@ -18,6 +18,14 @@ from database.database_connection import (
 db_url = build_db_url()  # or fallback if db_url is None
 engine = create_database_connection(db_url)
 
+from core.utils import list_available_models
+
+# Get all models
+models = list_available_models()
+print(f"Found {len(models)} models:")
+for model in models:
+    print(f"- {model['algorithm'].upper()} (cache size: {model['cache_size']}) trained on {model['device'].upper()} at {model['created_at']}")
+
 class MariaDBCacheEnvironment(gym.Env):
     """
     A gymnasium environment for database cache optimization using MariaDB.
@@ -53,8 +61,7 @@ class MariaDBCacheEnvironment(gym.Env):
         self.logger = logging.getLogger(__name__)
         self.cache_size = cache_size
         self.max_queries = max_queries
-        self.db_url = db_url or os.environ.get('DB_URL',
-                                               'mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db')
+        self.db_url = db_url
 
         # Create database connection
         self.logger.info(f"Connecting to database: {self.db_url}")

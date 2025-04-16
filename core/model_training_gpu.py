@@ -84,7 +84,7 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
         policy_net = model.policy  # Fallback
 
     # Create example input tensor matching observation space shape
-    example_input = torch.zeros((1, model.observation_space.shape[0]), dtype=torch.float32)
+    example_input = torch.zeros((1, int(model.observation_space.shape[0])), dtype=torch.float32)
 
     try:
         # Export to TorchScript via tracing
@@ -94,13 +94,13 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
         output_path = os.path.join(output_dir, "policy.pt")
         traced_model.save(output_path)
 
-        # Save metadata for model deployment
+        # Save metadata for model deployment with conversion to native int types
         metadata_path = os.path.join(output_dir, "metadata.json")
         with open(metadata_path, "w") as f:
             json.dump({
                 "original_model": model_path,
-                "observation_space_shape": list(model.observation_space.shape),
-                "action_space_size": model.action_space.n,
+                "observation_space_shape": [int(x) for x in model.observation_space.shape],
+                "action_space_size": int(model.action_space.n),
                 "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }, f, indent=2)
 

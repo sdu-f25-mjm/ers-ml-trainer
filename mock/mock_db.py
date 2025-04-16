@@ -28,8 +28,6 @@ def get_db_handler(db_type):
         raise ValueError(f"Unsupported database type: {db_type}")
 
 
-
-
 def generate_energy_data(db_handler, hours, price_areas):
     """
     Generate mock energy data for a given number of hours for each price area and insert the data into the energy_data table.
@@ -74,7 +72,6 @@ def generate_energy_data(db_handler, hours, price_areas):
 
     db_handler.commit()
     logger.info("Mock energy data generation completed.")
-
 
 
 def generate_production_data(db_handler, hours, price_areas, types):
@@ -285,6 +282,7 @@ def generate_carbon_intensity_data(db_handler, hours, aggregationTypes, price_ar
 
     db_handler.commit()
 
+
 def generate_aggregated_production(db_handler, hours, aggregationTypes, types, price_areas):
     """
     Simulate aggregated production data and insert rows into the aggregated_production table.
@@ -352,6 +350,7 @@ def generate_aggregated_production(db_handler, hours, aggregationTypes, types, p
                 db_handler.execute_query(query, params)
 
     db_handler.commit()
+
 
 def generate_comparison_analysis(db_handler, hours, comparisonTypes, price_areas):
     """
@@ -489,34 +488,35 @@ def generate_mock_database(
         database='cache_db',
         port=3306,
         hours=1000,
-        db_type='mysql'
+        db_type='mysql',
+        data_types=None  # New parameter for selecting specific mock data
 ):
     """
-    Generate a mock database with sample energy data and derived data cache weights.
-
-    Steps:
-      1. Get the proper database handler.
-      2. Connect to the database.
-      3. Create all tables based on the schema defined in create_tables.py.
-      4. Generate mock energy data.
-      5. Generate initial cache weights.
+    Generate a mock database with sample data.
+    
+    If data_types is provided, only the specified mock data will be created.
+    Available types: "energy", "production", "consumption", "exchange", 
+    "carbon_intensity", "aggregated_production", "comparison_analysis", 
+    "consumption_forecast", "cache_weights"
     """
     price_areas = ["DK1", "DK2"]
-
     countries = ["germany", "greatbritain", "netherlands", "norway", "sweden"]
-
     types = ["wind", "solar", "hydro", "commercialPower", "centralPower"]
-
     aggregationTypes = ["hourly", "daily", "weekly", "monthly", "yearly"]
-
     comparisonTypes = ["absolute", "percentage", "yearOverYear", "custom"]
-
     horizon = 24
 
     if db_type not in ['mysql', 'postgres', 'sqlite']:
         logger.error(f"Unsupported database type: {db_type}")
         return False
 
+    # If no selection provided, generate all mock data.
+    if data_types is None:
+        data_types = [
+            "energy", "production", "consumption", "exchange",
+            "carbon_intensity", "aggregated_production",
+            "comparison_analysis", "consumption_forecast", "cache_weights"
+        ]
 
     logger.info(f"Generating mock database for {db_type} with {hours} hours of data for: {', '.join(price_areas)}")
     try:
@@ -534,20 +534,34 @@ def generate_mock_database(
         # Create tables based on the schema
         create_tables(db_handler)
 
-        # Generate data: insert mock energy data into the database.
-        logger.info("Generating mock energy data")
-        generate_energy_data(db_handler, hours, price_areas)
-        generate_production_data(db_handler, hours, price_areas, types)
-        generate_consumption_data(db_handler, hours, price_areas)
-        generate_exchange_data(db_handler, hours, countries)
-        generate_carbon_intensity_data(db_handler, hours, aggregationTypes, price_areas)
-        generate_aggregated_production(db_handler, hours, aggregationTypes, types, price_areas)
-        generate_comparison_analysis(db_handler, hours, comparisonTypes, price_areas)
-        generate_consumption_forecast(db_handler, hours, horizon, price_areas)
-
-        # Generate cache weights: populate derived_data_cache_weights table.
-        logger.info("Generating derived data cache weights")
-        simulate_derived_data_weights(db_handler, update_interval=5, run_duration=10, stop_event=None)
+        # Generate mock data based on selection
+        if "energy" in data_types:
+            logger.info("Generating mock energy data")
+            generate_energy_data(db_handler, hours, price_areas)
+        if "production" in data_types:
+            logger.info("Generating mock production data")
+            generate_production_data(db_handler, hours, price_areas, types)
+        if "consumption" in data_types:
+            logger.info("Generating mock consumption data")
+            generate_consumption_data(db_handler, hours, price_areas)
+        if "exchange" in data_types:
+            logger.info("Generating mock exchange data")
+            generate_exchange_data(db_handler, hours, countries)
+        if "carbon_intensity" in data_types:
+            logger.info("Generating mock carbon intensity data")
+            generate_carbon_intensity_data(db_handler, hours, aggregationTypes, price_areas)
+        if "aggregated_production" in data_types:
+            logger.info("Generating aggregated production data")
+            generate_aggregated_production(db_handler, hours, aggregationTypes, types, price_areas)
+        if "comparison_analysis" in data_types:
+            logger.info("Generating comparison analysis data")
+            generate_comparison_analysis(db_handler, hours, comparisonTypes, price_areas)
+        if "consumption_forecast" in data_types:
+            logger.info("Generating consumption forecast data")
+            generate_consumption_forecast(db_handler, hours, horizon, price_areas)
+        if "cache_weights" in data_types:
+            logger.info("Generating derived data cache weights")
+            simulate_derived_data_weights(db_handler, update_interval=5, run_duration=10, stop_event=None)
 
         db_handler.commit()
         db_handler.close()

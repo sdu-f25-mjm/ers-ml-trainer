@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-import torch
+import re
 
 from stable_baselines3 import DQN, A2C, PPO
 from stable_baselines3.common.callbacks import EvalCallback
@@ -33,22 +33,31 @@ print(f"Using {device} device")
 def export_model_to_torchscript(model_path, output_dir="best_model"):
     """
     Export trained stable-baselines3 RL model to TorchScript format for production deployment.
-    This CPU-only version exports the model to run on CPU.
+    This function is optimized for CPU usage.
     """
     logger = logging.getLogger(__name__)
 
+    try:
+        from stable_baselines3 import DQN, A2C, PPO
+    except ImportError:
+        logger.error("stable-baselines3 not installed, cannot export model")
+        return None
+
+    # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
     # Determine model type from filename and load model
     if "ppo" in model_path.lower():
-        model = PPO.load(model_path, device="cpu")
+        model = PPO.load(model_path)
     elif "a2c" in model_path.lower():
-        model = A2C.load(model_path, device="cpu")
+        model = A2C.load(model_path)
     else:
-        model = DQN.load(model_path, device="cpu")
+        model = DQN.load(model_path)
 
+    # Set to evaluation mode
     model.policy.set_training_mode(False)
 
+    # Extract the policy network
     if hasattr(model.policy, 'q_net'):
         policy_net = model.policy.q_net  # For DQN
     elif hasattr(model.policy, 'actor'):
@@ -56,20 +65,27 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
     else:
         policy_net = model.policy  # Fallback
 
+    # Create example input tensor matching observation space shape
+    import torch
     example_input = torch.zeros((1, model.observation_space.shape[0]), dtype=torch.float32)
 
     try:
+        # Export to TorchScript via tracing
         traced_model = torch.jit.trace(policy_net, example_input)
+
+        # Save the model
         output_path = os.path.join(output_dir, "policy.pt")
         traced_model.save(output_path)
 
+        # Save metadata for model deployment
         metadata_path = os.path.join(output_dir, "metadata.json")
         with open(metadata_path, "w") as f:
             json.dump({
                 "original_model": model_path,
                 "observation_space_shape": list(model.observation_space.shape),
                 "action_space_size": model.action_space.n,
-                "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "device": "cpu"
             }, f, indent=2)
 
         logger.info(f"Model successfully exported to {output_path}")
@@ -224,14 +240,9 @@ def evaluate_cache_model_cpu(model_path, eval_steps=1000, db_url=None):
 
     logger.info(f"Model loaded successfully on {device}!")
 
-    if db_url is None:
-        db_url = "sqlite:///mock/mock_database.db"
-
-    import re
     match = re.search(r'cache_(\d+)', model_path)
     cache_size = int(match.group(1)) if match else 10
 
-    from core.cache_environment import create_mariadb_cache_env
     env = create_mariadb_cache_env(
         db_url=db_url,
         cache_size=cache_size

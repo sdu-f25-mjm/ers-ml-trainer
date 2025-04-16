@@ -12,7 +12,6 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text, inspect
-from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
 from core.model_training_cpu import train_cache_model_cpu, evaluate_cache_model_cpu
 from core.model_training_gpu import train_cache_model_gpu, evaluate_cache_model_gpu
@@ -21,11 +20,7 @@ from database.database_connection import get_database_connection
 from mock.mock_db import generate_mock_database
 from mock.simulation import simulate_derived_data_weights
 from core.utils import is_cuda_available, build_db_url, \
-    build_custom_db_url  # lightweight utility (does not import torch)
-
-# Global dictionaries to hold simulation & training job state
-running_simulations = {}
-training_jobs = {}
+    build_custom_db_url, list_available_models  # lightweight utility (does not import torch)
 
 # Set up logging
 logging.basicConfig(
@@ -37,6 +32,38 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Global dictionaries to hold simulation & training job state
+running_simulations = {}
+training_jobs = {}
+
+def load_trained_models():
+    """
+    Load all trained models at runtime and populate the training_jobs dictionary
+    """
+    global training_jobs
+    logger.info("Loading trained models into memory...")
+    models = list_available_models()
+    for model in models:
+        model_id = f"{model['algorithm']}_{model['cache_size']}_{model['timestamp']}"
+        training_jobs[model_id] = {
+            "job_id": model_id,
+            "status": "completed",
+            "start_time": model['created_at'],
+            "end_time": None,
+            "model_path": model['path'],
+            "metrics": model['metadata']
+        }
+    logger.info(f"Loaded {len(training_jobs)} trained models")
+    return training_jobs
+
+
+# Initialize the training_jobs dictionary with existing models
+training_jobs = load_trained_models()
+
+
+
+
 # Create FastAPI app
 app = FastAPI(
     title="Cache RL Optimization API",
@@ -288,16 +315,18 @@ async def evaluate_job_model(job_id: str, steps: int = 1000, use_gpu: bool = Tru
 
     # Dynamically import the correct evaluation function based on use_gpu and availability.
     if use_gpu and is_cuda_available():
-        from core.model_training_gpu import evaluate_cache_model_gpu
+        results = evaluate_cache_model_gpu(
+            model_path=job["model_path"],
+            eval_steps=steps,
+            db_url=None,  # default mock DB will be used inside the function
+            use_gpu=use_gpu
+        )
     else:
-        from core.model_training_cpu import evaluate_cache_model_cpu
-
-    results = evaluate_cache_model_cpu(
-        model_path=job["model_path"],
-        eval_steps=steps,
-        db_url=None,  # default mock DB will be used inside the function
-        use_gpu=use_gpu
-    )
+        results = evaluate_cache_model_cpu(
+            model_path=job["model_path"],
+            eval_steps=steps,
+            db_url=None,  # default mock DB will be used inside the function
+        )
 
     try:
         vis_path = visualize_cache_performance(results)
@@ -624,3 +653,4 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+
