@@ -80,7 +80,7 @@ def generate_energy_data(db_handler, hours, price_areas):
     # Build the INSERT query using the handler's placeholder symbol.
     query = f"""
     INSERT INTO energy_data (
-        hour_utc, price_area, central_power_mwh, local_power_mwh,
+        timestamp, price_area, central_power_mwh, local_power_mwh,
         gross_consumption_mwh, exchange_no_mwh, exchange_se_mwh, exchange_de_mwh,
         solar_power_self_con_mwh, grid_loss_transmission_mwh
     ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
@@ -88,7 +88,7 @@ def generate_energy_data(db_handler, hours, price_areas):
 
     for hour in range(hours):
         # Calculate timestamp for current hour
-        hour_timestamp = start_time + timedelta(hours=hour)
+        hour_timestamp = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now()).isoformat()
         for area in price_areas:
             # Generate random energy values
             central_power = random.uniform(0, 1000)
@@ -113,23 +113,24 @@ def generate_energy_data(db_handler, hours, price_areas):
 
 def generate_production_data(db_handler, hours, price_areas, types):
 
-    now = datetime.utcnow()
     placeholder = db_handler.get_placeholder_symbol()
 
     insert_query = f"""
     INSERT INTO production_data (
                 timestamp, price_area, wind_total_mwh, offshore_wind_total_mwh, offshore_wind_lt100mw_mwh,
-                offshore_wind_ge100mw_mwh, onshore_wind_total_mwh, solar_total_mwh, solar_total_no_self_consumption_mwh, 
-                solar_power_self_consumption_mwh, solar_power_ge40_kw_mwh, solar_power_ge10_lt40_kw_mwh, commercial_power_mwh,
+                offshore_wind_ge100mw_mwh, onshore_wind_total_mwh,onshore_wind_ge50_kw_mwh, solar_total_mwh,
+                 solar_total_no_self_consumption_mwh, solar_power_self_consumption_mwh, solar_power_ge40_kw_mwh,
+                  solar_power_ge10_lt40_kw_mwh, solar_power_lt10_kw_mwh, commercial_power_mwh,
                 commercial_power_self_consumption_mwh, central_power_mwh, hydro_power_mwh,local_power_mwh
                 ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
                 {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                {placeholder}, {placeholder}, {placeholder}, {placeholder}
+                {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}
                 )"""
 
 
+
     for hour_offset in range(hours):
-        ts = now + timedelta(hours=hour_offset)
+        ts = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now()).isoformat()
         for price_area in price_areas:
             # Initialize all production values to zero.
             wind_total = offshore_total = offshore_lt = offshore_ge = onshore = 0
@@ -143,6 +144,7 @@ def generate_production_data(db_handler, hours, price_areas, types):
                 offshore_lt = random.uniform(10, 50)
                 offshore_ge = offshore_total - offshore_lt
                 onshore = random.uniform(20, 60)
+                onshore_ge50 = random.uniform(5, 20)
 
             # Simulate solar production values.
             if "solar" in types:
@@ -151,6 +153,7 @@ def generate_production_data(db_handler, hours, price_areas, types):
                 solar_self = solar_total - solar_no_self
                 solar_ge40 = random.uniform(5, 20)
                 solar_ge10 = random.uniform(10, 30)
+                solar_lt10 = random.uniform(8, 25)
 
             # Simulate hydro production.
             if "hydro" in types:
@@ -170,10 +173,11 @@ def generate_production_data(db_handler, hours, price_areas, types):
                 local = random.uniform(10, 50)
 
             params = (ts, price_area, wind_total, offshore_total, offshore_lt,
-                      offshore_ge, onshore, solar_total, solar_no_self,
-                      solar_self, solar_ge40, solar_ge10, commercial,
+                      offshore_ge, onshore, onshore_ge50, solar_total, solar_no_self,
+                      solar_self, solar_ge40, solar_ge10, solar_lt10, commercial,
                       commercial_self, central, hydro, local)
             db_handler.execute_query(insert_query, params)
+
 
     db_handler.commit()
     logger.info("Mock production data generation completed.")
@@ -195,8 +199,7 @@ def generate_consumption_data(db_handler, hours, price_areas):
 
     # Loop over each hour and each price area to generate a record.
     for i in range(hours):
-        timestamp = start_time + timedelta(hours=i)
-        iso_timestamp = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now()).isoformat()
         for area in price_areas:
             consumption_total = random.uniform(100, 500)  # Example ranges
             consumption_private = random.uniform(50, consumption_total)
@@ -228,7 +231,7 @@ def generate_consumption_data(db_handler, hours, price_areas):
 
 
             params = (
-                iso_timestamp, area, consumption_total, consumption_private,
+                timestamp, area, consumption_total, consumption_private,
                 consumption_public, consumption_commertial, grid_loss_transmission,
                 grid_loss_interconnectors, grid_loss_distribution, power_to_heat
             )
@@ -244,7 +247,7 @@ def generate_exchange_data(db_handler, hours, countries):
     price_areas = ["DK1", "DK2"]
     for hour in range(hours):
         # Generate a timestamp for this hour
-        ts = (base_time + timedelta(hours=hour)).isoformat()
+        ts = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now()).isoformat()
         for country in countries:
             # Randomly select a price area
             price_area = random.choice(price_areas)
@@ -281,7 +284,7 @@ def generate_carbon_intensity_data(db_handler, hours, price_areas):
     now = datetime.now()
 
     for h in range(hours):
-        timestamp = now - timedelta(hours=h)
+        timestamp = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now()).isoformat()
         for area in price_areas:
             # Generate a random carbon intensity value.
             carbon_intensity = round(random.uniform(50, 150), 2)
@@ -313,7 +316,7 @@ def generate_carbon_intensity_data(db_handler, hours, price_areas):
     db_handler.commit()
 
 
-def generate_aggregated_production(db_handler, hours, aggregationTypes, types, price_areas):
+def generate_aggregated_production(db_handler, hours, aggregationTypes, price_areas):
     """
     Simulate aggregated production data and insert rows into the aggregated_production table.
 
@@ -321,7 +324,6 @@ def generate_aggregated_production(db_handler, hours, aggregationTypes, types, p
         db_handler: Database handler instance.
         hours: Number of simulation iterations (hours).
         aggregationTypes: List of aggregation types (e.g. "hourly", "daily", "weekly", "monthly", "yearly").
-        types: List of production types (unused in this simplified simulation).
         price_areas: List of price areas (e.g. ["DK1", "DK2"]).
     """
     placeholder = db_handler.get_placeholder_symbol()
@@ -331,7 +333,7 @@ def generate_aggregated_production(db_handler, hours, aggregationTypes, types, p
     for i in range(hours):
         # Calculate the random time from 1970-01-01-00 to now in  YYYY-MM-DD HH:MM:SS.mmmmmm
 
-        current_time = base_time + timedelta(hours=i)
+        current_time = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now())
         # Loop over each price area
         for area in price_areas:
             # For each defined aggregation type
@@ -369,7 +371,7 @@ def generate_aggregated_production(db_handler, hours, aggregationTypes, types, p
                 """
                 params = (
                     current_time.isoformat(),
-                    period_end.isoformat(),
+                    period_end,
                     area,
                     agg_type,
                     total,
@@ -395,7 +397,7 @@ def generate_comparison_analysis(db_handler, hours, comparisonTypes, price_areas
      - Computes both the absolute difference and percentage change.
      - Inserts the computed values into the 'comparison_analysis' table.
     """
-    now = datetime.now()
+    now = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now())
     period_duration = timedelta(days=1)  # Duration for each period
     placeholder = db_handler.get_placeholder_symbol()
 
@@ -476,7 +478,7 @@ def generate_consumption_forecast(db_handler, hours, horizon, price_areas):
 
     for price_area in price_areas:
         forecast_data = []
-        forecast_start = datetime.now()
+        forecast_start = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now())
 
         for hour in range(hours):
             for i in range(horizon):
@@ -550,7 +552,7 @@ def generate_mock_database(
 
     price_areas = ["DK1", "DK2"]
     countries = ["germany", "greatbritain", "netherlands", "norway", "sweden"]
-    types = ["wind", "solar", "hydro", "commercialPower", "centralPower"]
+    types = ["wind", "solar", "hydro", "commercialPower", "centralPower", "local"]
     aggregationTypes = ["hourly", "daily", "weekly", "monthly", "yearly"]
     comparisonTypes = ["absolute", "percentage", "yearOverYear", "custom"]
     horizon = 24
@@ -603,7 +605,7 @@ def generate_mock_database(
             generate_carbon_intensity_data(db_handler, hours, price_areas)
         if "aggregated_production" in data_types:
             logger.info("Generating aggregated production data")
-            generate_aggregated_production(db_handler, hours, aggregationTypes, types, price_areas)
+            generate_aggregated_production(db_handler, hours, aggregationTypes, price_areas)
         if "comparison_analysis" in data_types:
             logger.info("Generating comparison analysis data")
             generate_comparison_analysis(db_handler, hours, comparisonTypes, price_areas)

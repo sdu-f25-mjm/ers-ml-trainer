@@ -13,7 +13,7 @@ def create_tables(db_handler):
     energy_table_sql = f"""
     CREATE TABLE IF NOT EXISTS energy_data (
         id INTEGER PRIMARY KEY {auto_increment},
-        hour_utc {timestamp_type},
+        timestamp {timestamp_type},
         price_area VARCHAR(10),
         central_power_mwh FLOAT,
         local_power_mwh FLOAT,
@@ -26,7 +26,7 @@ def create_tables(db_handler):
     )
     """
     db_handler.execute_query(energy_table_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_energy_hour ON energy_data(hour_utc)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_energy_hour ON energy_data(timestamp)")
     db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_energy_area ON energy_data(price_area)")
 
     # Production data table
@@ -40,11 +40,13 @@ def create_tables(db_handler):
         offshore_wind_lt100mw_mwh FLOAT,
         offshore_wind_ge100mw_mwh FLOAT,
         onshore_wind_total_mwh FLOAT,
+        onshore_wind_ge50_kw_mwh FLOAT,
         solar_total_mwh FLOAT,
         solar_total_no_self_consumption_mwh FLOAT,
         solar_power_self_consumption_mwh FLOAT,
         solar_power_ge40_kw_mwh FLOAT,
         solar_power_ge10_lt40_kw_mwh FLOAT,
+        solar_power_lt10_kw_mwh FLOAT,
         commercial_power_mwh FLOAT,
         commercial_power_self_consumption_mwh FLOAT,
         central_power_mwh FLOAT,
