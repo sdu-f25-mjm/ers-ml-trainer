@@ -1,14 +1,13 @@
 # mock/mock_db.py
 import json
 import logging
+import os
 import random
 from datetime import datetime, timedelta
 
 from database.create_tables import create_tables
 from mock.simulation import simulate_derived_data_weights
-from database.tables_enum import TableEnum  # <-- new import
 
-# Set up logging
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -19,7 +18,12 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
+DB_DRIVER = os.getenv("DB_DRIVER", "mysql+mysqlconnector")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", 3306)
+DB_NAME = os.getenv("DB_NAME", "cache_db")
+DB_USER = os.getenv("DB_USER", "cacheuser")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "cachepass")
 
 def get_db_handler(db_type):
     """Get the appropriate database handler based on type"""
@@ -488,15 +492,14 @@ def generate_consumption_forecast(db_handler, hours, horizon, price_areas):
     db_handler.commit()
     return forecast_entries
 
-
 def generate_mock_database(
-        host='ers-mariadb',
-        user='cacheuser',
-        password='cachepass',
-        database='cache_db',
-        port=3306,
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        port=DB_PORT,
         hours=1000,
-        db_type='mysql',
+        db_type=DB_DRIVER,
         data_types=None  # New parameter for selecting specific mock data
 ):
     """

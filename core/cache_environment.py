@@ -274,7 +274,7 @@ class MariaDBCacheEnvironment(gym.Env):
 def create_mariadb_cache_env(
         db_url: str = None,
         cache_size: int = 10,
-        feature_columns: list[FeatureColumnsEnum] = None,
+        feature_columns: list[str] = None,
         max_queries: int = 500,
         table_name: str = None
 ) -> MariaDBCacheEnvironment:

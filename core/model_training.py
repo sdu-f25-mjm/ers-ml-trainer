@@ -231,7 +231,7 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
 
 def train_cache_model(
         db_url,
-        algorithm=algorithm,
+        algorithm=None,
         cache_size=10,
         max_queries=500,
         table_name=None,
@@ -273,7 +273,7 @@ def train_cache_model(
     env = create_mariadb_cache_env(
         db_url=db_url,
         cache_size=cache_size,
-        feature_columns=[],
+        feature_columns=feature_columns,
         max_queries=max_queries,
         table_name=table_name
     )
@@ -284,7 +284,7 @@ def train_cache_model(
         cache_size=cache_size,
         feature_columns=feature_columns,
         max_queries=max_queries,
-        table_name=CacheTableEnum.CACHE_WEIGHTS.value
+        table_name=table_name
     )
     eval_env = Monitor(eval_env)
 
