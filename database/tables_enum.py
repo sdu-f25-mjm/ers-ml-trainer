@@ -2,14 +2,14 @@ from enum import Enum
 
 
 class TableEnum(str, Enum):
-    ENERGY = "energy_data"
-    PRODUCTION = "production_data"
-    CONSUMPTION = "consumption_data"
-    EXCHANGE = "exchange_data"
-    CARBON_INTENSITY = "carbon_intensity_data"
-    AGGREGATED_PRODUCTION = "aggregated_production"
-    COMPARISON_ANALYSIS = "comparison_analysis"
-    CONSUMPTION_FORECAST = "consumption_forecast"
-    CACHE_WEIGHTS = "derived_data_cache_weights"
+    energy_data = "energy_data"
+    production_data = "production_data"
+    consumption_data = "consumption_data"
+    exchange_data = "exchange_data"
+    carbon_intensity = "carbon_intensity"
+    aggregated_production = "aggregated_production"
+    comparison_analysis = "comparison_analysis"
+    consumption_forecast = "consumption_forecast"
+    derived_data_cache_weights = "derived_data_cache_weights"
 
 

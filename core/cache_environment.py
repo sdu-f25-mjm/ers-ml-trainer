@@ -80,13 +80,24 @@ class MariaDBCacheEnvironment(gym.Env):
         self.logger.info(f"Available tables: {', '.join(self.available_tables)}")
 
         # Select table to use - either specified or first available
+        # In __init__ method, after checking for specified table_name:
         if table_name:
             if table_exists(self.engine, table_name):
                 self.table_name = table_name
                 self.logger.info(f"Using specified table: {self.table_name}")
             else:
-                self.logger.warning(
-                    f"Specified table {table_name} not found")
+                self.logger.warning(f"Specified table {table_name} not found")
+                # Fall back to first available table
+                if self.available_tables:
+                    self.table_name = self.available_tables[0]
+                    self.logger.info(f"Using first available table: {self.table_name}")
+        else:
+            # No table specified, use first available
+            if self.available_tables:
+                self.table_name = self.available_tables[6]
+                self.logger.info(f"No table specified. Using first available: {self.table_name}")
+            else:
+                raise ValueError("No tables available in the database")
 
         # Get table schema to understand data structure
         self.table_schema = get_table_schema(self.engine, self.table_name)

@@ -215,7 +215,7 @@ async def seed_database(
         password: str = Query(DB_PASSWORD, description="Database password"),
         database: str = Query(DB_NAME, description="Database name"),
         hours: int = Query(1000, description="Hours of data to generate"),
-        data_types: TableEnum = Query(None, description="Data types: " + ", ".join([e.value for e in TableEnum])),
+        data_types: Optional[List[TableEnum]] = Query(None, description="Data types: " + ", ".join([e.name for e in TableEnum])),
 ):
     """Seed the database with mock energy data"""
     try:

@@ -46,20 +46,12 @@ def simulate_derived_data_weights(db_handler, update_interval=5, run_duration=No
             "time_relevance_decay": 0.1,
             "access_probability": 0.4
         },
-        # Additional endpoints can be added here
         {
             "name": "carbon_intensity",
             "volatility_range": (0.3, 0.7),
             "complexity_range": (0.5, 0.8),
             "time_relevance_decay": 0.03,
             "access_probability": 0.5
-        },
-        {
-            "name": "exchange_analysis",
-            "volatility_range": (0.4, 0.7),
-            "complexity_range": (0.6, 0.8),
-            "time_relevance_decay": 0.04,
-            "access_probability": 0.25
         }
     ]
 

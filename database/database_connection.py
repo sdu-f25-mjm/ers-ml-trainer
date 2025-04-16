@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
 from core.utils import build_db_url
 
-
+build_db_url()
 def retry_with_backoff(max_retries=5, initial_backoff=1, max_backoff=60):
     """
     Decorator that retries the function with exponential backoff on database errors.

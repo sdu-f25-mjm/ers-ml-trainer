@@ -9,157 +9,156 @@ def create_tables(db_handler):
     auto_increment = db_handler.get_auto_increment_syntax()
     timestamp_type = db_handler.get_timestamp_type()
 
-    # Energy data table (unchanged)
+    # Energy data table
     energy_table_sql = f"""
     CREATE TABLE IF NOT EXISTS energy_data (
         id INTEGER PRIMARY KEY {auto_increment},
-        HourUTC {timestamp_type},
-        PriceArea VARCHAR(10),
-        CentralPower_MWh FLOAT,
-        LocalPower_MWh FLOAT,
-        GrossConsumption_MWh FLOAT,
-        ExchangeNO_MWh FLOAT,
-        ExchangeSE_MWh FLOAT,
-        ExchangeDE_MWh FLOAT,
-        SolarPowerSelfConMWh FLOAT,
-        GridLossTransmissionMWh FLOAT
+        hour_utc {timestamp_type},
+        price_area VARCHAR(10),
+        central_power_mwh FLOAT,
+        local_power_mwh FLOAT,
+        gross_consumption_mwh FLOAT,
+        exchange_no_mwh FLOAT,
+        exchange_se_mwh FLOAT,
+        exchange_de_mwh FLOAT,
+        solar_power_self_con_mwh FLOAT,
+        grid_loss_transmission_mwh FLOAT
     )
     """
     db_handler.execute_query(energy_table_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_energy_hour ON energy_data(HourUTC)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_energy_area ON energy_data(PriceArea)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_energy_hour ON energy_data(hour_utc)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_energy_area ON energy_data(price_area)")
 
-    # Production data table (updated to include detailed production columns)
+    # Production data table
     production_table_sql = f"""
     CREATE TABLE IF NOT EXISTS production_data (
         id INTEGER PRIMARY KEY {auto_increment},
         timestamp {timestamp_type},
-        PriceArea VARCHAR(10),
-        WindTotal_MWh FLOAT,
-        OffshoreWindTotal_MWh FLOAT,
-        OffshoreWindLt100MW_MWh FLOAT,
-        OffshoreWindGe100MW_MWh FLOAT,
-        OnshoreWindTotal_MWh FLOAT,
-        SolarTotal_MWh FLOAT,
-        SolarTotalNoSelfConsumption_MWh FLOAT,
-        SolarPowerSelfConsumption_MWh FLOAT,
-        SolarPowerGe40kW_MWh FLOAT,
-        SolarPowerGe10Lt40kW_MWh FLOAT,
-        CommercialPower_MWh FLOAT,
-        CommercialPowerSelfConsumption_MWh FLOAT,
-        CentralPower_MWh FLOAT,
-        HydroPower_MWh FLOAT,
-        LocalPower_MWh FLOAT
+        price_area VARCHAR(10),
+        wind_total_mwh FLOAT,
+        offshore_wind_total_mwh FLOAT,
+        offshore_wind_lt100mw_mwh FLOAT,
+        offshore_wind_ge100mw_mwh FLOAT,
+        onshore_wind_total_mwh FLOAT,
+        solar_total_mwh FLOAT,
+        solar_total_no_self_consumption_mwh FLOAT,
+        solar_power_self_consumption_mwh FLOAT,
+        solar_power_ge40_kw_mwh FLOAT,
+        solar_power_ge10_lt40_kw_mwh FLOAT,
+        commercial_power_mwh FLOAT,
+        commercial_power_self_consumption_mwh FLOAT,
+        central_power_mwh FLOAT,
+        hydro_power_mwh FLOAT,
+        local_power_mwh FLOAT
     )
     """
     db_handler.execute_query(production_table_sql)
     db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_production_ts ON production_data(timestamp)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_production_area ON production_data(PriceArea)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_production_area ON production_data(price_area)")
 
-    # Consumption data table (updated based on OpenAPI schema)
+    # Consumption data table
     consumption_table_sql = f"""
     CREATE TABLE IF NOT EXISTS consumption_data (
         id INTEGER PRIMARY KEY {auto_increment},
         timestamp {timestamp_type},
-        PriceArea VARCHAR(10),
-        ConsumptionTotal_MWh FLOAT,
-        ConsumptionPrivate_MWh FLOAT,
-        ConsumptionPublicTotal_MWh FLOAT,
-        ConsumptionCommertialTotal_MWh FLOAT,
-        GridLossTransmission_MWh FLOAT,
-        GridLossInterconnectors_MWh FLOAT,
-        GridLossDistribution_MWh FLOAT,
-        PowerToHeatMWh FLOAT
+        price_area VARCHAR(10),
+        consumption_total_mwh FLOAT,
+        consumption_private_mwh FLOAT,
+        consumption_public_total_mwh FLOAT,
+        consumption_commertial_total_mwh FLOAT,
+        grid_loss_transmission_mwh FLOAT,
+        grid_loss_interconnectors_mwh FLOAT,
+        grid_loss_distribution_mwh FLOAT,
+        power_to_heat_mwh FLOAT
     )
     """
     db_handler.execute_query(consumption_table_sql)
     db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_consumption_ts ON consumption_data(timestamp)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_consumption_area ON consumption_data(PriceArea)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_consumption_area ON consumption_data(price_area)")
 
-    # Exchange data table (updated)
+    # Exchange data table
     exchange_table_sql = f"""
     CREATE TABLE IF NOT EXISTS exchange_data (
         id INTEGER PRIMARY KEY {auto_increment},
         timestamp {timestamp_type},
-        PriceArea VARCHAR(10),
+        price_area VARCHAR(10),
         exchange_country VARCHAR(50),
-        Import_MWh FLOAT,
-        Export_MWh FLOAT,
-        NetExchange_MWh FLOAT
+        import_mwh FLOAT,
+        export_mwh FLOAT,
+        net_exchange_mwh FLOAT
     )
     """
     db_handler.execute_query(exchange_table_sql)
     db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_exchange_ts ON exchange_data(timestamp)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_exchange_area ON exchange_data(PriceArea)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_exchange_area ON exchange_data(price_area)")
 
-    # Carbon intensity data table (updated with energy mix as JSON stored in a TEXT field)
+    # Carbon intensity data table
     carbon_table_sql = f"""
-    CREATE TABLE IF NOT EXISTS carbon_intensity_data (
+    CREATE TABLE IF NOT EXISTS carbon_intensity (
         id INTEGER PRIMARY KEY {auto_increment},
         timestamp {timestamp_type},
-        PriceArea VARCHAR(10),
-        CarbonIntensity_gCO2perKWh FLOAT,
-        EnergyMix TEXT
+        price_area VARCHAR(10),
+        carbon_intensity_gco2per_kwh FLOAT,
+        energy_mix TEXT
     )
     """
     db_handler.execute_query(carbon_table_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_carbon_ts ON carbon_intensity_data(timestamp)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_carbon_area ON carbon_intensity_data(PriceArea)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_carbon_ts ON carbon_intensity(timestamp)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_carbon_area ON carbon_intensity(price_area)")
 
-    # Aggregated production table (updated matching OpenAPI)
+    # Aggregated production table
     aggregated_production_sql = f"""
     CREATE TABLE IF NOT EXISTS aggregated_production (
         id INTEGER PRIMARY KEY {auto_increment},
-        PeriodStart {timestamp_type},
-        PeriodEnd {timestamp_type},
-        PriceArea VARCHAR(10),
-        AggregationType VARCHAR(20),
-        TotalProduction_MWh FLOAT,
-        WindProduction_MWh FLOAT,
-        SolarProduction_MWh FLOAT,
-        HydroProduction_MWh FLOAT,
-        CommercialProduction_MWh FLOAT,
-        CentralProduction_MWh FLOAT
+        period_start {timestamp_type},
+        period_end {timestamp_type},
+        price_area VARCHAR(10),
+        aggregation_type VARCHAR(20),
+        total_production_mwh FLOAT,
+        wind_production_mwh FLOAT,
+        solar_production_mwh FLOAT,
+        hydro_production_mwh FLOAT,
+        commercial_production_mwh FLOAT,
+        central_production_mwh FLOAT
     )
     """
     db_handler.execute_query(aggregated_production_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_agg_prod_start ON aggregated_production(PeriodStart)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_agg_prod_area ON aggregated_production(PriceArea)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_agg_prod_start ON aggregated_production(period_start)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_agg_prod_area ON aggregated_production(price_area)")
 
-    # Comparison analysis table (updated based on OpenAPI schema)
+    # Comparison analysis table
     comparison_sql = f"""
     CREATE TABLE IF NOT EXISTS comparison_analysis (
         id INTEGER PRIMARY KEY {auto_increment},
         generated_on {timestamp_type},
-        PriceArea VARCHAR(10),
-        Period1_Start {timestamp_type},
-        Period1_End {timestamp_type},
-        Period2_Start {timestamp_type},
-        Period2_End {timestamp_type},
-        ComparisonType VARCHAR(30),
-        -- Storing difference and percentage change as JSON for flexibility
-        Difference TEXT,
-        PercentageChange TEXT
+        price_area VARCHAR(10),
+        period1_start {timestamp_type},
+        period1_end {timestamp_type},
+        period2_start {timestamp_type},
+        period2_end {timestamp_type},
+        comparison_type VARCHAR(30),
+        difference TEXT,
+        percentage_change TEXT
     )
     """
     db_handler.execute_query(comparison_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_comparison_area ON comparison_analysis(PriceArea)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_comparison_area ON comparison_analysis(price_area)")
 
-    # Consumption forecast table (updated)
+    # Consumption forecast table
     consumption_forecast_sql = f"""
     CREATE TABLE IF NOT EXISTS consumption_forecast (
         id INTEGER PRIMARY KEY {auto_increment},
-        RequestDate {timestamp_type},
-        PriceArea VARCHAR(10),
-        ForecastHorizon INTEGER,
-        ForecastData LONGTEXT
+        request_date {timestamp_type},
+        price_area VARCHAR(10),
+        forecast_horizon INTEGER,
+        forecast_data LONGTEXT
     )
     """
     db_handler.execute_query(consumption_forecast_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_forecast_date ON consumption_forecast(RequestDate)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_forecast_area ON consumption_forecast(PriceArea)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_forecast_date ON consumption_forecast(request_date)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_forecast_area ON consumption_forecast(price_area)")
 
-    # Derived data cache weights table (remains similar)
+    # Derived data cache weights table
     weights_sql = f"""
     CREATE TABLE IF NOT EXISTS derived_data_cache_weights (
         id INTEGER PRIMARY KEY {auto_increment},

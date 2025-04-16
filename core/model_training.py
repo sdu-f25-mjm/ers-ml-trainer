@@ -181,29 +181,31 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
-    # Determine model type from filename and load model
-    if "ppo" in model_path.lower():
-        model = PPO.load(model_path)
-    elif "a2c" in model_path.lower():
-        model = A2C.load(model_path)
-    else:
-        model = DQN.load(model_path)
-
-    # Set to evaluation mode
-    model.policy.set_training_mode(False)
-
-    # Extract the policy network
-    if hasattr(model.policy, 'q_net'):
-        policy_net = model.policy.q_net  # For DQN
-    elif hasattr(model.policy, 'actor'):
-        policy_net = model.policy.actor  # For A2C/PPO
-    else:
-        policy_net = model.policy  # Fallback
-
-    # Create example input tensor matching observation space shape
-    example_input = torch.zeros((1, int(model.observation_space.shape[0])), dtype=torch.float32)
-
     try:
+        # Try first on CPU to avoid device mismatches
+        logger.info(f"Loading model {model_path} to CPU for export")
+        if "ppo" in model_path.lower():
+            model = PPO.load(model_path, device="cpu")
+        elif "a2c" in model_path.lower():
+            model = A2C.load(model_path, device="cpu")
+        else:
+            model = DQN.load(model_path, device="cpu")
+
+        # Set to evaluation mode
+        model.policy.set_training_mode(False)
+
+        # Extract the policy network
+        if hasattr(model.policy, 'q_net'):
+            policy_net = model.policy.q_net  # For DQN
+        elif hasattr(model.policy, 'actor'):
+            policy_net = model.policy.actor  # For A2C/PPO
+        else:
+            policy_net = model.policy  # Fallback
+
+        # Create example input tensor matching observation space shape
+        example_input = torch.zeros((1, int(model.observation_space.shape[0])),
+                                    dtype=torch.float32, device="cpu")
+
         # Export to TorchScript via tracing
         traced_model = torch.jit.trace(policy_net, example_input)
 
@@ -219,7 +221,7 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
                 "observation_space_shape": [int(x) for x in model.observation_space.shape],
                 "action_space_size": int(model.action_space.n),
                 "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "device": "cpu" if not is_cuda_available() else "cuda"
+                "device": "cpu"
             }, f, indent=2)
 
         logger.info(f"Model successfully exported to {output_path}")
@@ -394,102 +396,153 @@ def train_cache_model(
     return model_name
 
 
-def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False):
-    """
-    Evaluate a trained cache model using either CPU or GPU.
-    """
+def safe_cuda_initialization():
+    """Test if CUDA is fully functional"""
+    import torch
+    import logging
 
-    # Determine which device to use
-    device = "cpu" if not use_gpu else get_device()
+    logger = logging.getLogger(__name__)
+
+    if not torch.cuda.is_available():
+        logger.warning("CUDA not available")
+        return False
+
+    try:
+        test_tensor = torch.zeros(10, 10).cuda()
+        test_result = test_tensor + 1
+        torch.cuda.synchronize()
+        logger.info("CUDA initialization successful")
+        return True
+    except Exception as e:
+        logger.error(f"CUDA initialization failed: {e}")
+        return False
+
+
+def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False,
+                         table_name="derived_data_cache_weights"):
+    """Evaluate a trained cache model with robust GPU handling"""
+    import torch
+    import json
+    import os
+
+    # Check if GPU should and can be used
+    use_cuda = use_gpu and safe_cuda_initialization()
+    device = "cuda" if use_cuda else "cpu"
+
     logger.info(f"Evaluating model on {device.upper()}")
 
-    if device == "cuda" and not is_cuda_available():
-        logger.warning("CUDA requested but not available. Falling back to CPU.")
-        device = "cpu"
+    try:
+        # Load feature columns from model metadata if not provided
+        metadata_path = f"{model_path.replace('.zip', '')}.meta.json"
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                    feature_columns = metadata.get('feature_columns')
+                    logger.info(f"Loaded feature columns from metadata: {feature_columns}")
+            except Exception as e:
+                logger.warning(f"Failed to load feature columns from metadata: {e}")
 
-    # Load the appropriate model
-    if "ppo" in model_path.lower():
-        model = PPO.load(model_path, device=device)
-    elif "a2c" in model_path.lower():
-        model = A2C.load(model_path, device=device)
-    else:
-        model = DQN.load(model_path, device=device)
+        # Default feature columns if still None
 
-    logger.info(f"Model loaded successfully on {device}!")
+            from api.app_utils import FeatureColumnsEnum
+            feature_columns = [e.value for e in FeatureColumnsEnum]
+            logger.info(f"Using default feature columns: {feature_columns}")
 
-    # Extract cache size from model path
-    match = re.search(r'cache_(\d+)', model_path)
-    cache_size = int(match.group(1)) if match else 10
+        # Load model with proper device
+        if "ppo" in model_path.lower():
+            model = PPO.load(model_path, device=device)
+        elif "a2c" in model_path.lower():
+            model = A2C.load(model_path, device=device)
+        else:
+            model = DQN.load(model_path, device=device)
 
-    # Create environment
-    env = create_mariadb_cache_env(db_url=db_url, cache_size=cache_size)
-    env = Monitor(env)  # Wrap with Monitor for metrics capture
-    obs, _ = env.reset()
+        logger.info(f"Model loaded successfully on {device}!")
 
-    # Initialize metrics
-    total_reward = 0
-    done = False
-    step_count = 0
-    saved_hit_rates = []
-    hit_history = []
-    rewards = []
-    inference_times = []
+        # Create environment with explicit table_name and feature columns
+        env = create_mariadb_cache_env(
+            db_url=db_url,
+            table_name=table_name,
+            feature_columns=feature_columns,
+            cache_size=10,
+            max_queries=eval_steps
+        )
+        # env = Monitor(env)  # Wrap with Monitor for metrics capture
+        obs, _ = env.reset()
 
-    # Start evaluation
-    eval_start = datetime.now()
+        # Initialize metrics
+        total_reward = 0
+        done = False
+        step_count = 0
+        saved_hit_rates = []
+        hit_history = []
+        rewards = []
+        inference_times = []
 
-    while not done and step_count < eval_steps:
-        # Measure inference time
-        pred_start = datetime.now()
-        action, _ = model.predict(obs, deterministic=True)
-        inference_times.append((datetime.now() - pred_start).total_seconds() * 1000)
+        # Start evaluation
+        eval_start = datetime.now()
 
-        # Track cache hit
-        prev_hits = env.cache_hits
-        obs, reward, terminated, truncated, info = env.step(action)
-        hit_history.append(1 if env.cache_hits > prev_hits else 0)
+        while not done and step_count < eval_steps:
+            # Measure inference time
+            pred_start = datetime.now()
+            action, _ = model.predict(obs, deterministic=True)
+            inference_times.append((datetime.now() - pred_start).total_seconds() * 1000)
 
-        # Track rewards
-        total_reward += reward
-        rewards.append(reward)
+            # Track cache hit
+            prev_hits = env.cache_hits
+            obs, reward, terminated, truncated, info = env.step(action)
+            hit_history.append(1 if env.cache_hits > prev_hits else 0)
 
-        # Check termination
-        done = terminated or truncated
-        step_count += 1
+            # Track rewards
+            total_reward += reward
+            rewards.append(reward)
 
-        # Log progress
-        if step_count % 100 == 0:
-            current_hit_rate = info['cache_hit_rate']
-            saved_hit_rates.append(current_hit_rate)
-            avg_inference = sum(inference_times[-100:]) / len(inference_times[-100:])
-            logger.info(f"Step {step_count}, hit rate: {current_hit_rate:.4f}, "
-                        f"avg inference: {avg_inference:.2f}ms")
+            # Check termination
+            done = terminated or truncated
+            step_count += 1
 
-    # Calculate evaluation time
-    eval_time = (datetime.now() - eval_start).total_seconds()
-    logger.info(f"Evaluation completed in {eval_time:.2f} seconds")
+            # Log progress
+            if step_count % 100 == 0:
+                current_hit_rate = info['cache_hit_rate']
+                saved_hit_rates.append(current_hit_rate)
+                avg_inference = sum(inference_times[-100:]) / len(inference_times[-100:])
+                logger.info(f"Step {step_count}, hit rate: {current_hit_rate:.4f}, "
+                            f"avg inference: {avg_inference:.2f}ms")
 
-    # Clean up
-    env.close()
-    if device == "cuda":
-        torch.cuda.empty_cache()
+        # Calculate evaluation time
+        eval_time = (datetime.now() - eval_start).total_seconds()
+        logger.info(f"Evaluation completed in {eval_time:.2f} seconds")
 
-    # Calculate moving hit rate
-    window_size = 25
-    moving_hit_rates = [
-        np.mean(hit_history[max(0, i - window_size):i + 1])
-        for i in range(len(hit_history))
-    ]
+        # Clean up
+        env.close()
+        if device == "cuda":
+            torch.cuda.empty_cache()
 
-    # Return evaluation metrics
-    return {
-        'hit_rates': saved_hit_rates,
-        'hit_history': hit_history,
-        'rewards': rewards,
-        'moving_hit_rates': moving_hit_rates,
-        'final_hit_rate': info['cache_hit_rate'],
-        'total_reward': total_reward,
-        'avg_inference_time_ms': sum(inference_times) / len(inference_times),
-        'evaluation_time_seconds': eval_time,
-        'device_used': device
-    }
+        # Calculate moving hit rate
+        window_size = 25
+        moving_hit_rates = [
+            np.mean(hit_history[max(0, i - window_size):i + 1])
+            for i in range(len(hit_history))
+        ]
+
+        # Return evaluation metrics
+        return {
+            'hit_rates': saved_hit_rates,
+            'hit_history': hit_history,
+            'rewards': rewards,
+            'moving_hit_rates': moving_hit_rates,
+            'final_hit_rate': info['cache_hit_rate'],
+            'total_reward': total_reward,
+            'avg_inference_time_ms': sum(inference_times) / len(inference_times),
+            'evaluation_time_seconds': eval_time,
+            'device_used': device
+        }
+    except Exception as e:
+        logger.error(f"Model evaluation failed: {e}")
+
+        # If failed on GPU, retry on CPU
+        if device == "cuda":
+            logger.info("Retrying evaluation on CPU")
+            return evaluate_cache_model(model_path, eval_steps, db_url, use_gpu=False, table_name=table_name)
+
+        return {"error": str(e), "success": False}

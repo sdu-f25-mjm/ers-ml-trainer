@@ -12,13 +12,15 @@ services:
       - ../models:/app/models
       - ../model_checkpoints:/app/model_checkpoints
       - ../cache_eval_results:/app/cache_eval_results
+      - ../best_model:/app/best_model
     environment:
+      - DB_DRIVER=mysql+mysqlconnector
+      - GPU_ID=0
       - DB_HOST=ers-mariadb
       - DB_PORT=3306
       - DB_NAME=cache_db
       - DB_USER=cacheuser
       - DB_PASSWORD=cachepass
-      - DB_URL=mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db
       - API_URL=http://localhost:8000
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
