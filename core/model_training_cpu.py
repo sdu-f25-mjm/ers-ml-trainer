@@ -143,6 +143,7 @@ def train_cache_model_cpu(db_url, algoritme="dqn", cache_size=10, max_queries=50
         max_queries=max_queries,
         table_name=table_name
     )
+    eval_env = Monitor(eval_env)
 
     eval_callback = EvalCallback(
         eval_env,

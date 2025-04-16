@@ -44,6 +44,15 @@ app = FastAPI(
     docs_url="/"
 )
 API = os.getenv("API_URL", "localhost:8000")
+DB_DRIVER = os.getenv("DB_DRIVER", "mysql+mysqlconnector")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", 3306)
+DB_NAME = os.getenv("DB_NAME", "cache_db")
+DB_USER = os.getenv("DB_USER", "cacheuser")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "cachepass")
+DB_URL = os.getenv("DB_URL", f"{DB_DRIVER}://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
+
+
 
 
 @app.on_event("startup")
@@ -65,12 +74,13 @@ def health_check():
 # Example endpoint that returns available columns
 @app.get("/available-columns", response_model=Dict[str, List[str]], tags=["database"])
 def available_columns(
-        db_type: str = Query("mysql+mysqlconnector", description="Database type: mysql, postgres, or sqlite"),
-        host: str = Query("ers-mariadb", description="Database hostname"),
-        port: int = Query(3306, description="Database port"),
-        user: str = Query("cacheuser", description="Database username"),
-        password: str = Query("cachepass", description="Database password"),
-        database: str = Query("cache_db", description="Database name")):
+        db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
+        host: str = Query(DB_HOST, description="Database hostname"),
+        port: int = Query(DB_PORT, description="Database port"),
+        user: str = Query(DB_USER, description="Database username"),
+        password: str = Query(DB_PASSWORD, description="Database password"),
+        database: str = Query(DB_NAME, description="Database name")
+):
     db_url = build_custom_db_url(db_type, host, port, database, user, password)
     columns = get_derived_cache_columns(db_url)
     return {"available_columns": columns}
@@ -78,12 +88,12 @@ def available_columns(
 @app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new training job")
 async def start_training(
     background_tasks: BackgroundTasks,
-    db_type: str = Query("mysql+mysqlconnector", description="Database type: mysql, postgres, or sqlite"),
-    host: str = Query("ers-mariadb", description="Database hostname"),
-    port: int = Query(3306, description="Database port"),
-    user: str = Query("cacheuser", description="Database username"),
-    password: str = Query("cachepass", description="Database password"),
-    database: str = Query("cache_db", description="Database name"),
+    db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
+    host: str = Query(DB_HOST, description="Database hostname"),
+    port: int = Query(DB_PORT, description="Database port"),
+    user: str = Query(DB_USER, description="Database username"),
+    password: str = Query(DB_PASSWORD, description="Database password"),
+    database: str = Query(DB_NAME, description="Database name"),
     algorithm: AlgorithmEnum = Query(AlgorithmEnum.dqn, description="RL algorithm to use" + ", ".join([e.value for e in AlgorithmEnum])),
     cache_size: int = Query(10, description="Size of the cache"),
     max_queries: int = Query(500, description="Maximum number of queries for training"),
@@ -214,13 +224,13 @@ async def export_job_model(job_id: str, output_dir: str = "best_model"):
 
 @app.post("/db/seed", response_model=Dict[str, Any], tags=["database"])
 async def seed_database(
-        host: str = Query("ers-mariadb", description="Database hostname"),
-        port: int = Query(3306, description="Database port"),
-        user: str = Query("cacheuser", description="Database username"),
-        password: str = Query("cachepass", description="Database password"),
-        database: str = Query("cache_db", description="Database name"),
+        db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
+        host: str = Query(DB_HOST, description="Database hostname"),
+        port: int = Query(DB_PORT, description="Database port"),
+        user: str = Query(DB_USER, description="Database username"),
+        password: str = Query(DB_PASSWORD, description="Database password"),
+        database: str = Query(DB_NAME, description="Database name"),
         hours: int = Query(1000, description="Hours of data to generate"),
-        db_type: str = Query("mysql", description="Database type: mysql, postgres, or sqlite"),
         data_types: TableEnum = Query(None, description="Data types: " + ", ".join([e.value for e in TableEnum])),
 ):
     """Seed the database with mock energy data"""
@@ -247,13 +257,13 @@ async def seed_database(
 
 @app.post("/simulation/start", response_model=Dict[str, Any], tags=["simulation"])
 async def start_simulation(
-        host: str = Query("ers-mariadb", description="Database hostname"),
-        port: int = Query(3306, description="Database port"),
-        user: str = Query("cacheuser", description="Database username"),
-        password: str = Query("cachepass", description="Database password"),
-        database: str = Query("cache_db", description="Database name"),
+        db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
+        host: str = Query(DB_HOST, description="Database hostname"),
+        port: int = Query(DB_PORT, description="Database port"),
+        user: str = Query(DB_USER, description="Database username"),
+        password: str = Query(DB_PASSWORD, description="Database password"),
+        database: str = Query(DB_NAME, description="Database name"),
         update_interval: int = Query(5, description="Simulation update interval in seconds"),
-        db_type: str = Query("mysql", description="Database type: mysql, postgres, or sqlite"),
         simulation_id: str = Query(None, description="Optional custom simulation ID")
 ):
     """Start a simulation of derived data usage"""
@@ -265,25 +275,21 @@ async def start_simulation(
         if sim_id in running_simulations:
             return {"status": "already_running", "simulation_id": sim_id}
 
-        # Create database connection
-        db_url = build_custom_db_url(db_type, host, port, database, user, password)
-        success = get_database_connection(db_url)
+        # Get the appropriate database handler instead of a raw connection
+        from mock.mock_db import get_db_handler
+        db_handler = get_db_handler(db_type.split('+')[0])  # Extract base type (mysql, postgres, etc.)
 
-        if not success:
+        if not db_handler.connect(host, port, user, password, database):
             raise HTTPException(status_code=500, detail=f"Failed to connect to {db_type} database")
-
-        # Create database engine
-        engine = create_engine(db_url)
-        db = engine.connect()
 
         # Create stop event for this simulation
         stop_event = threading.Event()
 
-        # Start simulation in a separate thread
+        # Start simulation in a separate thread with the database handler
         sim_thread = threading.Thread(
             target=simulate_derived_data_weights,
-            args=(db, update_interval, None, stop_event),
-            daemon=True  # Thread will be terminated when main thread exits
+            args=(db_handler, update_interval, None, stop_event),
+            daemon=True
         )
         sim_thread.start()
 
@@ -305,7 +311,6 @@ async def start_simulation(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error starting simulation: {str(e)}")
-
 
 @app.post("/simulation/stop/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"])
 async def stop_simulation(simulation_id: str):
@@ -370,11 +375,11 @@ async def get_simulation_status(simulation_id: str):
 
 @app.get("/cache/derived/weights", response_model=Dict[str, Any], tags=["cache"])
 async def get_derived_data_weights(
-        host: str = Query("ers-mariadb", description="Database hostname"),
-        port: int = Query(3306, description="Database port"),
-        user: str = Query("cacheuser", description="Database username"),
-        password: str = Query("cachepass", description="Database password"),
-        database: str = Query("cache_db", description="Database name"),
+        host: str = Query(DB_HOST, description="Database hostname"),
+        port: int = Query(DB_PORT, description="Database port"),
+        user: str = Query(DB_USER, description="Database username"),
+        password: str = Query(DB_PASSWORD, description="Database password"),
+        database: str = Query(DB_NAME, description="Database name"),
         endpoint: Optional[str] = Query(None, description="Filter by endpoint type")
 ):
     """Get current cache weights for derived data"""
