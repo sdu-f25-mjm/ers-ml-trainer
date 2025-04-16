@@ -7,6 +7,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
+from api.app_utils import FeatureColumnsEnum
 from core.utils import build_db_url
 from database.database_connection import (
     create_database_connection,
@@ -273,7 +274,7 @@ class MariaDBCacheEnvironment(gym.Env):
 def create_mariadb_cache_env(
         db_url: str = None,
         cache_size: int = 10,
-        feature_columns: List[str] = None,
+        feature_columns: list[FeatureColumnsEnum] = None,
         max_queries: int = 500,
         table_name: str = None
 ) -> MariaDBCacheEnvironment:

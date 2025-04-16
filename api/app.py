@@ -9,12 +9,10 @@ from uuid import uuid4
 
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
-from sqlalchemy import create_engine
 
 from api.app_utils import get_derived_cache_columns, TrainingResponse, AlgorithmEnum, CacheTableEnum,\
     start_training_in_process, JobStatus, get_job_status, training_jobs, running_simulations, FeatureColumnsEnum
-from core.model_training_cpu import evaluate_cache_model_cpu
-from core.model_training_gpu import evaluate_cache_model_gpu
+from core.model_training import evaluate_cache_model, export_model_to_torchscript
 from core.visualization import visualize_cache_performance
 from database.database_connection import get_database_connection
 from database.tables_enum import TableEnum
@@ -35,8 +33,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global dictionaries to hold simulation & training job state
-
-
 app = FastAPI(
     title="Cache RL Optimization API",
     description="API for training and deploying RL models for database cache optimization",
@@ -69,7 +65,7 @@ async def startup_db_client():
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "gpu_available": is_cuda_available()}
 
 # Example endpoint that returns available columns
 @app.get("/available-columns", response_model=Dict[str, List[str]], tags=["database"])
@@ -101,7 +97,6 @@ async def start_training(
     table_name: str = Query(CacheTableEnum.CACHE_WEIGHTS, description="Table name for training" + ", ".join([e.value for e in TableEnum])),
     feature_columns: Optional[List[FeatureColumnsEnum]] = Query(None, description="Select one or more enum values for feature columns" + ", ".join([e.value for e in FeatureColumnsEnum])),
     use_gpu: bool = Query(False, description="Use GPU for training if available"),
-    gpu_id: Optional[int] = Query(None, description="Specific GPU ID to use (if multiple)"),
     batch_size: Optional[int] = Query(None, description="Batch size for training"),
     learning_rate: Optional[float] = Query(None, description="Learning rate for training")
 ):
@@ -134,7 +129,6 @@ async def start_training(
         table_name,
         feature_keys,
         use_gpu,
-        gpu_id,
         batch_size,
         learning_rate,
     )
@@ -158,7 +152,7 @@ async def list_jobs():
 
 @app.post("/evaluate/{job_id}", response_model=Dict[str, Any], tags=["evaluation"],
           description="Evaluate a trained model from a completed job")
-async def evaluate_job_model(job_id: str, steps: int = 1000, use_gpu: bool = True):
+async def evaluate_job_model(job_id: str, steps: int = 1000, use_gpu: bool = False):
     job = get_job_status(job_id)
     if job["status"] != "completed":
         raise HTTPException(status_code=400, detail=f"Job {job_id} is not completed")
@@ -166,19 +160,13 @@ async def evaluate_job_model(job_id: str, steps: int = 1000, use_gpu: bool = Tru
         raise HTTPException(status_code=400, detail=f"No model path found for job {job_id}")
 
     # Dynamically import the correct evaluation function based on use_gpu and availability.
-    if use_gpu and is_cuda_available():
-        results = evaluate_cache_model_gpu(
-            model_path=job["model_path"],
-            eval_steps=steps,
-            db_url=None,  # default mock DB will be used inside the function
-            use_gpu=use_gpu
-        )
-    else:
-        results = evaluate_cache_model_cpu(
-            model_path=job["model_path"],
-            eval_steps=steps,
-            db_url=None,  # default mock DB will be used inside the function
-        )
+
+    results = evaluate_cache_model(
+        model_path=job["model_path"],
+        eval_steps=steps,
+        db_url=DB_URL,
+        use_gpu=use_gpu
+    )
 
     try:
         vis_path = visualize_cache_performance(results)
@@ -199,10 +187,6 @@ async def export_job_model(job_id: str, output_dir: str = "best_model"):
         raise HTTPException(status_code=400, detail=f"No model path found for job {job_id}")
     try:
         # For export, we will use the GPU version if available
-        if is_cuda_available():
-            from core.model_training_gpu import export_model_to_torchscript
-        else:
-            from core.model_training_cpu import export_model_to_torchscript
 
         output_path = export_model_to_torchscript(
             model_path=job["model_path"],

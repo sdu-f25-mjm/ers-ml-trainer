@@ -34,8 +34,20 @@ jobs:
           context: .
           file: ./docker/Dockerfile.cpu
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ers-ml-trainer:latest
+            ghcr.io/${{ github.repository_owner }}/ers-ml-trainer:cpu-latest
             ghcr.io/${{ github.repository_owner }}/ers-ml-trainer:cpu-${{ github.sha }}
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+#      - name: Build and Push GPU Docker Image
+#        uses: docker/build-push-action@v4
+#        with:
+#          context: .
+#          file: ./docker/Dockerfile.gpu
+#          tags: |
+#            ghcr.io/${{ github.repository_owner }}/ers-ml-trainer:gpu-latest
+#            ghcr.io/${{ github.repository_owner }}/ers-ml-trainer:gpu-${{ github.sha }}
+#          push: true
+#          cache-from: type=gha
+#          cache-to: type=gha,mode=max

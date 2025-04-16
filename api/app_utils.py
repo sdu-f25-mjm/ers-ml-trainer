@@ -9,8 +9,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy import create_engine, inspect
 
-from core.model_training_cpu import train_cache_model_cpu, evaluate_cache_model_cpu
-from core.model_training_gpu import train_cache_model_gpu, evaluate_cache_model_gpu
+
 from core.utils import list_available_models, is_cuda_available
 from core.visualization import visualize_cache_performance
 
@@ -90,6 +89,7 @@ class JobStatus(BaseModel):
     model_path: Optional[str] = None
     metrics: Optional[Dict[str, Any]] = None
 
+from core.model_training import train_cache_model, evaluate_cache_model
 
 def get_job_status(job_id: str):
     if job_id not in training_jobs:
@@ -100,14 +100,13 @@ def get_job_status(job_id: str):
 async def run_training_job(
         job_id: str,
         db_url: str,
-        algorithm: str,
+        algorithm: Optional[List],
         cache_size: int,
         max_queries: int,
         timesteps: int,
         table_name: str,
-        feature_columns: Optional[List[str]],
+        feature_columns: Optional[List],
         use_gpu: bool = True,
-        gpu_id: Optional[int] = None,
         batch_size: Optional[int] = None,
         learning_rate: Optional[float] = None
 ):
@@ -119,46 +118,27 @@ async def run_training_job(
         logger.info(f"is_cuda_available: {is_cuda_available()}, use_gpu: {use_gpu}")
         if is_cuda_available() and use_gpu:
             logger.info(f"Training job {job_id} with algorithm {algorithm} using GPU")
-            model_path = train_cache_model_gpu(
-                db_url=db_url,
-                algoritme=algorithm,
-                cache_size=cache_size,
-                max_queries=max_queries,
-                timesteps=timesteps,
-                feature_columns=feature_columns,
-                gpu_id=gpu_id if use_gpu else None,
-                batch_size=batch_size,
-                learning_rate=learning_rate
-            )
-            logger.info(f"Evaluating model using GPU")
-            eval_results = evaluate_cache_model_gpu(
-                model_path=model_path,
-                eval_steps=1000,
-                db_url=db_url,
-                use_gpu=use_gpu
-            )
-
         else:
             logger.info(f"Training job {job_id} with algorithm {algorithm} using CPU")
-            model_path = train_cache_model_cpu(
-                db_url=db_url,
-                algoritme=algorithm,
-                cache_size=cache_size,
-                max_queries=max_queries,
-                table_name=table_name,
-                timesteps=timesteps,
-                feature_columns=feature_columns,
-                batch_size=batch_size,
-                learning_rate=learning_rate
-            )
-            logger.info(f"Evaluating model using CPU")
-            eval_results = evaluate_cache_model_cpu(
-                model_path=model_path,
-                eval_steps=1000,
-                db_url=db_url
-            )
-            logger.info(f"Training job {job_id} completed successfully. Model saved at {model_path}")
-
+        model_path = train_cache_model(
+            db_url=db_url,
+            algorithm=algorithm,
+            cache_size=cache_size,
+            max_queries=max_queries,
+            table_name=table_name,
+            feature_columns=feature_columns,
+            timesteps=timesteps,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            use_gpu=use_gpu,
+        )
+        logger.info(f"Evaluating model at {model_path}")
+        eval_results = evaluate_cache_model(
+            model_path=model_path,
+            eval_steps=1000,
+            db_url=db_url,
+            use_gpu=use_gpu
+        )
 
         logger.info(f"Training job {job_id} completed successfully. Model saved at {model_path}")
         # Evaluate the trained model using the same module that was used for training.
@@ -189,14 +169,14 @@ async def run_training_job(
 
 def start_training_in_process(job_id, db_url, algorithm, cache_size, max_queries,
                               timesteps,table_name, feature_columns,
-                              use_gpu, gpu_id, batch_size, learning_rate
+                              use_gpu, batch_size, learning_rate
                               ):
     """Start training in a separate process."""
     logger.info(f"Starting training for job {job_id}")
     # Run training job asynchronously in a process
     asyncio.run(run_training_job(
         job_id, db_url, algorithm, cache_size, max_queries, timesteps,table_name,
-        feature_columns, use_gpu, gpu_id, batch_size, learning_rate
+        feature_columns, use_gpu, batch_size, learning_rate
     ))
 
 # Utility function to get column names from the derived_data_cache_weights table

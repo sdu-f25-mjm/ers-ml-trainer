@@ -4,13 +4,21 @@ import psutil
 import logging
 import os
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("logs/application.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 def configure_gpu_environment():
     """
     Configure and return the device to be used for computations.
     If CUDA is available, returns 'cuda', otherwise returns 'cpu'.
     """
-    logger = logging.getLogger(__name__)
     if is_cuda_available():
         device = 'cuda'
         logger.info("CUDA is available. Configuring GPU environment.")
@@ -43,7 +51,6 @@ def is_cuda_available():
 
 def get_gpu_info():
     """Get detailed information about available GPUs"""
-    logger = logging.getLogger(__name__)
 
     # First check if CUDA is available without importing torch
     if not is_cuda_available():
@@ -97,7 +104,6 @@ def get_gpu_info():
 
 def print_system_info():
     """Print system information including CPU, RAM and GPU details"""
-    logger = logging.getLogger(__name__)
 
     # CPU info
     cpu_count = psutil.cpu_count(logical=False)
@@ -156,9 +162,6 @@ def list_available_models(models_dir="models"):
     import os
     import re
     import json
-
-    logger = logging.getLogger(__name__)
-
     if not os.path.exists(models_dir):
         logger.warning(f"Models directory '{models_dir}' does not exist")
         return []

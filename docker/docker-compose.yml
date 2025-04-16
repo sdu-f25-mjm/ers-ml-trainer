@@ -1,9 +1,9 @@
 services:
   ers-ml-trainer:
-    image: ers-ml-trainer:cpu
+    image: ers-ml-trainer:gpu
     build:
       context: ..
-      dockerfile: docker/Dockerfile.cpu
+      dockerfile: docker/Dockerfile.gpu
     container_name: ers-ml-trainer
     ports:
       - "8000:8000"
