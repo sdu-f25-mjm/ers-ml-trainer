@@ -154,7 +154,7 @@ def configure_gpu_environment(gpu_id=None):
     return True
 
 
-def train_cache_model_gpu(db_url, algoritme="dqn", cache_size=10, max_queries=500,
+def train_cache_model_gpu(db_url, algoritme="dqn", cache_size=10, max_queries=500, table_name="derived_data_cache_weights",
                           feature_columns=None, timesteps=100000, gpu_id=None,
                           batch_size=None, learning_rate=None):
     """
@@ -172,7 +172,6 @@ def train_cache_model_gpu(db_url, algoritme="dqn", cache_size=10, max_queries=50
     if not is_cuda_available():
         logger.error("CUDA is not available. Training requires a GPU.")
         raise EnvironmentError("CUDA is not available.")
-    has_gpu = configure_gpu_environment(gpu_id)
 
     # Import GPU-specific libraries
     import torch

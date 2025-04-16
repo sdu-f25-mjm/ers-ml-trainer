@@ -6,10 +6,18 @@ from datetime import datetime, timedelta
 
 from database.create_tables import create_tables
 from mock.simulation import simulate_derived_data_weights
+from database.tables_enum import TableEnum  # <-- new import
 
 # Set up logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("logs/application.log"),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 
@@ -493,12 +501,29 @@ def generate_mock_database(
 ):
     """
     Generate a mock database with sample data.
-    
+
     If data_types is provided, only the specified mock data will be created.
-    Available types: "energy", "production", "consumption", "exchange", 
-    "carbon_intensity", "aggregated_production", "comparison_analysis", 
-    "consumption_forecast", "cache_weights"
+    Available types: TableEnum.ENERGY, TableEnum.PRODUCTION, TableEnum.CONSUMPTION,
+    TableEnum.EXCHANGE, TableEnum.CARBON_INTENSITY, TableEnum.AGGREGATED_PRODUCTION,
+    TableEnum.COMPARISON_ANALYSIS, TableEnum.CONSUMPTION_FORECAST, TableEnum.CACHE_WEIGHTS
     """
+    logger.info(data_types)
+    # Convert enums to their value strings if needed.
+    if data_types is not None:
+        if not isinstance(data_types, list):
+            data_types = [data_types]
+        data_types = [dt.value if hasattr(dt, "value") else dt for dt in data_types]
+        logger.info(f"Data types provided: {data_types}")
+        if len(data_types) == 0:
+            logger.warning("No data_types selected, skipping mock data generation.")
+            return True
+    else:
+        data_types = [
+            "energy", "production", "consumption", "exchange",
+            "carbon_intensity", "aggregated_production",
+            "comparison_analysis", "consumption_forecast", "cache_weights"
+        ]
+
     price_areas = ["DK1", "DK2"]
     countries = ["germany", "greatbritain", "netherlands", "norway", "sweden"]
     types = ["wind", "solar", "hydro", "commercialPower", "centralPower"]

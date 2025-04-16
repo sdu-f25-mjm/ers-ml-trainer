@@ -7,6 +7,7 @@ import re
 
 from stable_baselines3 import DQN, A2C, PPO
 from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.monitor import Monitor  # <-- New import
 
 from datetime import datetime
 
@@ -97,7 +98,7 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
 
 
 
-def train_cache_model_cpu(db_url, algoritme="dqn", cache_size=10, max_queries=500,
+def train_cache_model_cpu(db_url, algoritme="dqn", cache_size=10, max_queries=500,table_name="derived_data_cache_weights",
                           feature_columns=None, timesteps=100000
                           , batch_size=None, learning_rate=None):
     """
@@ -131,14 +132,16 @@ def train_cache_model_cpu(db_url, algoritme="dqn", cache_size=10, max_queries=50
         db_url=db_url,
         cache_size=cache_size,
         feature_columns=feature_columns,
-        max_queries=max_queries
+        max_queries=max_queries,
+        table_name=table_name
     )
 
     eval_env = create_mariadb_cache_env(
         db_url=db_url,
         cache_size=cache_size,
         feature_columns=feature_columns,
-        max_queries=max_queries
+        max_queries=max_queries,
+        table_name=table_name
     )
 
     eval_callback = EvalCallback(
@@ -210,7 +213,7 @@ def train_cache_model_cpu(db_url, algoritme="dqn", cache_size=10, max_queries=50
         "learning_rate": learning_rate,
         "training_time_seconds": training_time.total_seconds(),
         "timesteps": timesteps,
-        "feature_columns": feature_columns or ["usage_frequency", "recency", "complexity"],
+        "feature_columns": feature_columns,
         "trained_at": timestamp
     }
 
@@ -243,10 +246,8 @@ def evaluate_cache_model_cpu(model_path, eval_steps=1000, db_url=None):
     match = re.search(r'cache_(\d+)', model_path)
     cache_size = int(match.group(1)) if match else 10
 
-    env = create_mariadb_cache_env(
-        db_url=db_url,
-        cache_size=cache_size
-    )
+    env = create_mariadb_cache_env(db_url=db_url, cache_size=cache_size)
+    env = Monitor(env)  # Wrap environment with Monitor to capture episode metrics
 
     obs, _ = env.reset()
 

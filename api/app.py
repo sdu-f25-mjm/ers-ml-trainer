@@ -1,26 +1,27 @@
-import asyncio
 import logging
 import os
-import random
 import re
 import threading
-import time
+
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
-from pydantic import BaseModel
-from sqlalchemy import create_engine, text, inspect
 
-from core.model_training_cpu import train_cache_model_cpu, evaluate_cache_model_cpu
-from core.model_training_gpu import train_cache_model_gpu, evaluate_cache_model_gpu
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
+from sqlalchemy import create_engine
+
+from api.app_utils import get_derived_cache_columns, TrainingResponse, AlgorithmEnum, CacheTableEnum,\
+    start_training_in_process, JobStatus, get_job_status, training_jobs, running_simulations, FeatureColumnsEnum
+from core.model_training_cpu import evaluate_cache_model_cpu
+from core.model_training_gpu import evaluate_cache_model_gpu
 from core.visualization import visualize_cache_performance
 from database.database_connection import get_database_connection
+from database.tables_enum import TableEnum
 from mock.mock_db import generate_mock_database
 from mock.simulation import simulate_derived_data_weights
 from core.utils import is_cuda_available, build_db_url, \
-    build_custom_db_url, list_available_models  # lightweight utility (does not import torch)
+    build_custom_db_url
 
 # Set up logging
 logging.basicConfig(
@@ -34,37 +35,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global dictionaries to hold simulation & training job state
-running_simulations = {}
-training_jobs = {}
-
-def load_trained_models():
-    """
-    Load all trained models at runtime and populate the training_jobs dictionary
-    """
-    global training_jobs
-    logger.info("Loading trained models into memory...")
-    models = list_available_models()
-    for model in models:
-        model_id = f"{model['algorithm']}_{model['cache_size']}_{model['timestamp']}"
-        training_jobs[model_id] = {
-            "job_id": model_id,
-            "status": "completed",
-            "start_time": model['created_at'],
-            "end_time": None,
-            "model_path": model['path'],
-            "metrics": model['metadata']
-        }
-    logger.info(f"Loaded {len(training_jobs)} trained models")
-    return training_jobs
 
 
-# Initialize the training_jobs dictionary with existing models
-training_jobs = load_trained_models()
-
-
-
-
-# Create FastAPI app
 app = FastAPI(
     title="Cache RL Optimization API",
     description="API for training and deploying RL models for database cache optimization",
@@ -72,137 +44,6 @@ app = FastAPI(
     docs_url="/"
 )
 API = os.getenv("API_URL", "localhost:8000")
-
-class TrainingResponse(BaseModel):
-    job_id: str
-    status: str
-    start_time: str
-
-
-class JobStatus(BaseModel):
-    job_id: str
-    status: str
-    start_time: str
-    end_time: Optional[str] = None
-    model_path: Optional[str] = None
-    metrics: Optional[Dict[str, Any]] = None
-
-
-def get_job_status(job_id: str):
-    if job_id not in training_jobs:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-    return training_jobs[job_id]
-
-
-async def run_training_job(
-        job_id: str,
-        db_url: str,
-        algorithm: str,
-        cache_size: int,
-        max_queries: int,
-        timesteps: int,
-        feature_columns: Optional[List[str]],
-        use_gpu: bool = True,
-        gpu_id: Optional[int] = None,
-        batch_size: Optional[int] = None,
-        learning_rate: Optional[float] = None
-):
-    try:
-        logger.info(f"Running training job {job_id} with algorithm {algorithm}")
-        training_jobs[job_id]["status"] = "running"
-
-        # If use_gpu is not requested or not available, force CPU training.
-        logger.info(f"is_cuda_available: {is_cuda_available()}, use_gpu: {use_gpu}")
-        if is_cuda_available() and use_gpu:
-            logger.info(f"Training job {job_id} with algorithm {algorithm} using GPU")
-            model_path = train_cache_model_gpu(
-                db_url=db_url,
-                algoritme=algorithm,
-                cache_size=cache_size,
-                max_queries=max_queries,
-                timesteps=timesteps,
-                feature_columns=feature_columns,
-                gpu_id=gpu_id if use_gpu else None,
-                batch_size=batch_size,
-                learning_rate=learning_rate
-            )
-            logger.info(f"Evaluating model using GPU")
-            eval_results = evaluate_cache_model_gpu(
-                model_path=model_path,
-                eval_steps=1000,
-                db_url=db_url,
-                use_gpu=use_gpu
-            )
-
-        else:
-            logger.info(f"Training job {job_id} with algorithm {algorithm} using CPU")
-            model_path = train_cache_model_cpu(
-                db_url=db_url,
-                algoritme=algorithm,
-                cache_size=cache_size,
-                max_queries=max_queries,
-                timesteps=timesteps,
-                feature_columns=feature_columns,
-                batch_size=batch_size,
-                learning_rate=learning_rate
-            )
-            logger.info(f"Evaluating model using CPU")
-            eval_results = evaluate_cache_model_cpu(
-                model_path=model_path,
-                eval_steps=1000,
-                db_url=db_url
-            )
-            logger.info(f"Training job {job_id} completed successfully. Model saved at {model_path}")
-
-
-        logger.info(f"Training job {job_id} completed successfully. Model saved at {model_path}")
-        # Evaluate the trained model using the same module that was used for training.
-
-        logger.info(f"Evaluation results: {eval_results}")
-
-        try:
-            vis_path = visualize_cache_performance(eval_results)
-            eval_results["visualization"] = vis_path
-        except Exception as e:
-            eval_results["visualization_error"] = str(e)
-
-        training_jobs[job_id].update({
-            "status": "completed",
-            "end_time": datetime.now().isoformat(),
-            "model_path": model_path,
-            "metrics": eval_results
-        })
-
-    except Exception as e:
-        import traceback
-        training_jobs[job_id].update({
-            "status": "failed",
-            "end_time": datetime.now().isoformat(),
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        })
-
-def start_training_in_process(job_id, db_url, algorithm, cache_size, max_queries,
-                              timesteps, feature_columns, optimized_for_cpu,
-                              use_gpu, gpu_id, batch_size, learning_rate):
-    """Start training in a separate process."""
-    logger.info(f"Starting training for job {job_id}")
-    # Run training job asynchronously in a process
-    asyncio.run(run_training_job(
-        job_id, db_url, algorithm, cache_size, max_queries, timesteps,
-        feature_columns, use_gpu, gpu_id, batch_size, learning_rate
-    ))
-
-# Utility function to get column names from the derived_data_cache_weights table
-def get_derived_cache_columns(db_url: str) -> List[str]:
-    try:
-        engine = create_engine(db_url)
-        inspector = inspect(engine)
-        columns = inspector.get_columns("derived_data_cache_weights")
-        return [col["name"] for col in columns]
-    except Exception as e:
-        raise Exception(f"Could not retrieve columns: {e}")
-
 
 
 @app.on_event("startup")
@@ -243,23 +84,22 @@ async def start_training(
     user: str = Query("cacheuser", description="Database username"),
     password: str = Query("cachepass", description="Database password"),
     database: str = Query("cache_db", description="Database name"),
-    algorithm: str = Query("dqn", description="RL algorithm to use (dqn, a2c, ppo)"),
+    algorithm: AlgorithmEnum = Query(AlgorithmEnum.dqn, description="RL algorithm to use" + ", ".join([e.value for e in AlgorithmEnum])),
     cache_size: int = Query(10, description="Size of the cache"),
     max_queries: int = Query(500, description="Maximum number of queries for training"),
     timesteps: int = Query(100000, description="Training timesteps"),
-    feature_columns: Optional[List[str]] = Query([""], description="Feature columns to use"),
-    optimized_for_cpu: bool = Query(is_cuda_available(), description="Optimize for CPU training"),
+    table_name: str = Query(CacheTableEnum.CACHE_WEIGHTS, description="Table name for training" + ", ".join([e.value for e in TableEnum])),
+    feature_columns: Optional[List[FeatureColumnsEnum]] = Query(None, description="Select one or more enum values for feature columns" + ", ".join([e.value for e in FeatureColumnsEnum])),
     use_gpu: bool = Query(False, description="Use GPU for training if available"),
     gpu_id: Optional[int] = Query(None, description="Specific GPU ID to use (if multiple)"),
     batch_size: Optional[int] = Query(None, description="Batch size for training"),
     learning_rate: Optional[float] = Query(None, description="Learning rate for training")
 ):
     job_id = str(uuid4())
-    logger.info(f"Starting training job 276: {job_id}")
+    logger.info(f"Starting training job {job_id}")
     start_time = datetime.now().isoformat()
     db_url = build_custom_db_url(db_type, host, port, database, user, password)
     logger.info(f"Database URL: {db_url}")
-
 
     training_jobs[job_id] = {
         "job_id": job_id,
@@ -271,6 +111,8 @@ async def start_training(
     }
     logger.info("Training job added to queue")
 
+    feature_keys = [f.value for f in feature_columns] if feature_columns else None
+
     background_tasks.add_task(
         start_training_in_process,
         job_id,
@@ -279,12 +121,12 @@ async def start_training(
         cache_size,
         max_queries,
         timesteps,
-        feature_columns,
-        optimized_for_cpu,
+        table_name,
+        feature_keys,
         use_gpu,
         gpu_id,
         batch_size,
-        learning_rate
+        learning_rate,
     )
 
     return {
@@ -378,7 +220,8 @@ async def seed_database(
         password: str = Query("cachepass", description="Database password"),
         database: str = Query("cache_db", description="Database name"),
         hours: int = Query(1000, description="Hours of data to generate"),
-        db_type: str = Query("mysql", description="Database type: mysql, postgres, or sqlite")
+        db_type: str = Query("mysql", description="Database type: mysql, postgres, or sqlite"),
+        data_types: TableEnum = Query(None, description="Data types: " + ", ".join([e.value for e in TableEnum])),
 ):
     """Seed the database with mock energy data"""
     try:
@@ -390,7 +233,8 @@ async def seed_database(
             database=database,
             port=port,
             hours=hours,
-            db_type=db_type
+            db_type=db_type,
+            data_types=data_types
         )
 
         if success:
@@ -653,4 +497,6 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+
+
 

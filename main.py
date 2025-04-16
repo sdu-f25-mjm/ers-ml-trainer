@@ -30,7 +30,7 @@ def setup_logging(log_level: str):
     logger.info(f"Logging initialized at {log_level} level")
 
 
-def setup_mock_database(force_recreate: bool):
+def setup_mock_database():
     """Set up the mock database for testing if needed."""
     logger = logging.getLogger(__name__)
     try:
@@ -53,7 +53,8 @@ def setup_mock_database(force_recreate: bool):
             password=password,
             database=database,
             port=3306,
-            hours=24
+            hours=24,
+            data_types=None
         )
 
         if success:

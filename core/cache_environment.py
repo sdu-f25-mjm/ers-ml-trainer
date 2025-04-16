@@ -85,11 +85,7 @@ class MariaDBCacheEnvironment(gym.Env):
                 self.logger.info(f"Using specified table: {self.table_name}")
             else:
                 self.logger.warning(
-                    f"Specified table {table_name} not found, falling back to {self.available_tables[0]}")
-                self.table_name = self.available_tables[0]
-        else:
-            self.table_name = self.available_tables[0]
-            self.logger.info(f"No table specified, using first available table: {self.table_name}")
+                    f"Specified table {table_name} not found")
 
         # Get table schema to understand data structure
         self.table_schema = get_table_schema(self.engine, self.table_name)
