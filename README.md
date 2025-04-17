@@ -161,16 +161,7 @@ python -m main --reload
 
 ## API Usage
 
-```bash
-# Train a model
-curl -X POST "http://localhost:8000/train" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "db_url": "mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db",
-    "algorithm": "dqn",
-    "cache_size": 10,
-    "timesteps": 10000
-  }'
+
   
 # Evaluate a model
 curl -X POST "http://localhost:8000/evaluate/{job_id}?steps=1000"
