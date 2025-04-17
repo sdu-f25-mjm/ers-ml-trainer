@@ -51,6 +51,13 @@ def load_trained_models():
 # Initialize the training_jobs dictionary with existing models
 load_trained_models()
 
+# database types
+class DatabaseTypeEnum(str, Enum):
+    mysql = "mysql"
+    postgresql = "postgresql"
+    sqlite = "sqlite"
+    oracle = "oracle"
+    mssql = "mssql"
 
 # Define allowed algorithms
 class AlgorithmEnum(str, Enum):

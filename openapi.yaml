@@ -50,7 +50,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProductionResponse'
+                $ref: '#/components/schemas/ProductionsResponse'
         "400":
           description: Bad request - invalid date format or parameters
         "404":
@@ -496,8 +496,21 @@ components:
         Export_MWh: 120.5
         Import_MWh: 75.2
         NetExchange_MWh: 45.3
+    ProductionsResponse:
+      type: object
+      properties:
+        type:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductionResponse'
+
     ProductionResponse:
       allOf:
+        - type: object
+          properties:
+            date:
+              type: string
+              format: date
         - $ref: '#/components/schemas/ProductionWind'
         - $ref: '#/components/schemas/ProductionSolar'
         - $ref: '#/components/schemas/ProductionMisc'

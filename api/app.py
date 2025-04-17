@@ -10,8 +10,9 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 
-from api.app_utils import get_derived_cache_columns, TrainingResponse, AlgorithmEnum, CacheTableEnum,\
-    start_training_in_process, JobStatus, get_job_status, training_jobs, running_simulations, FeatureColumnsEnum
+from api.app_utils import get_derived_cache_columns, TrainingResponse, AlgorithmEnum, CacheTableEnum, \
+    start_training_in_process, JobStatus, get_job_status, training_jobs, running_simulations, FeatureColumnsEnum, \
+    DatabaseTypeEnum
 from core.model_training import evaluate_cache_model, export_model_to_torchscript
 from core.visualization import visualize_cache_performance
 from database.database_connection import get_database_connection
@@ -208,7 +209,7 @@ async def export_job_model(job_id: str, output_dir: str = "best_model"):
 
 @app.post("/db/seed", response_model=Dict[str, Any], tags=["database"])
 async def seed_database(
-        db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
+        db_type: str = Query(DatabaseTypeEnum.mysql, description="Database type: mysql, postgres, or sqlite"),
         host: str = Query(DB_HOST, description="Database hostname"),
         port: int = Query(DB_PORT, description="Database port"),
         user: str = Query(DB_USER, description="Database username"),
