@@ -21,6 +21,10 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
     final_hit_rate = evaluation_results.get('final_hit_rate', 0)
     device_used = evaluation_results.get('device_used', 'unknown')
 
+    # Extract new reasoning/in_cache columns if present
+    step_reasoning = evaluation_results.get('step_reasoning', [])
+    in_cache = evaluation_results.get('in_cache', [])
+
     if not hit_history:
         logger.warning("No hit history data to visualize")
         return None
@@ -51,6 +55,32 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
         ax2.grid(True, linestyle='--', alpha=0.7)
         ax2.legend()
 
+    # Add a table with reasoning and in_cache for first 10 steps (if available)
+    if step_reasoning and in_cache:
+        from matplotlib.table import Table
+        ax_table = fig.add_axes([0.1, -0.25, 0.8, 0.18])  # [left, bottom, width, height]
+        ax_table.axis('off')
+        n_rows = min(10, len(step_reasoning))
+        col_labels = ["Step", "Hit/Miss", "In Cache", "Reasoning"]
+        cell_text = []
+        for i in range(n_rows):
+            hitmiss = "Hit" if hit_history[i] else "Miss"
+            cell_text.append([
+                str(i + 1),
+                hitmiss,
+                str(in_cache[i]),
+                step_reasoning[i][:60] + ("..." if len(step_reasoning[i]) > 60 else "")
+            ])
+        table = ax_table.table(
+            cellText=cell_text,
+            colLabels=col_labels,
+            loc='center',
+            cellLoc='left'
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1, 1.2)
+
     # Add metadata
     plt.tight_layout()
 
@@ -76,3 +106,4 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
 
     logger.info(f"Cache visualization saved to {filepath}")
     return filepath
+

@@ -6,7 +6,7 @@ import random
 from datetime import datetime, timedelta
 
 from database.create_tables import create_tables
-from mock.simulation import simulate_derived_data_weights
+from mock.simulation import simulate_cache_metrics
 
 # Set up logging
 logging.basicConfig(
@@ -546,7 +546,7 @@ def generate_mock_database(
         data_types = [
             "energy_data", "production_data", "consumption_data", "exchange_data",
             "carbon_intensity", "aggregated_production",
-            "comparison_analysis", "consumption_forecast", "derived_data_cache_weights"
+            "comparison_analysis", "consumption_forecast", "cache_metrics"
         ]
 
 
@@ -566,7 +566,7 @@ def generate_mock_database(
         data_types = [
             "energy_data", "production_data", "consumption_data", "exchange_data",
             "carbon_intensity", "aggregated_production",
-            "comparison_analysis", "consumption_forecast", "derived_data_cache_weights"
+            "comparison_analysis", "consumption_forecast", "cache_metrics"
         ]
 
 
@@ -612,9 +612,9 @@ def generate_mock_database(
         if "consumption_forecast" in data_types:
             logger.info("Generating consumption forecast data")
             generate_consumption_forecast(db_handler, hours, horizon, price_areas)
-        if "derived_data_cache_weights" in data_types:
+        if "cache_metrics" in data_types:
             logger.info("Generating derived data cache weights")
-            simulate_derived_data_weights(db_handler, update_interval=5, run_duration=10, stop_event=None)
+            simulate_cache_metrics(db_handler, update_interval=5, run_duration=10, stop_event=None)
 
         db_handler.commit()
         db_handler.close()

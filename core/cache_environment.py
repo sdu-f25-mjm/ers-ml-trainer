@@ -7,7 +7,6 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from api.app_utils import FeatureColumnsEnum
 from core.utils import build_db_url
 from database.database_connection import (
     create_database_connection,
@@ -80,7 +79,6 @@ class MariaDBCacheEnvironment(gym.Env):
         self.logger.info(f"Available tables: {', '.join(self.available_tables)}")
 
         # Select table to use - either specified or first available
-        # In __init__ method, after checking for specified table_name:
         if table_name:
             if table_exists(self.engine, table_name):
                 self.table_name = table_name
@@ -94,7 +92,7 @@ class MariaDBCacheEnvironment(gym.Env):
         else:
             # No table specified, use first available
             if self.available_tables:
-                self.table_name = self.available_tables[6]
+                self.table_name = self.available_tables[0]
                 self.logger.info(f"No table specified. Using first available: {self.table_name}")
             else:
                 raise ValueError("No tables available in the database")

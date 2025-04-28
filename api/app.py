@@ -10,15 +10,15 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 
-from api.app_utils import get_derived_cache_columns, TrainingResponse, AlgorithmEnum, CacheTableEnum, \
-    start_training_in_process, JobStatus, get_job_status, training_jobs, running_simulations, FeatureColumnsEnum, \
+from api.app_utils import get_derived_cache_columns, get_dynamic_feature_columns_enum, TrainingResponse, AlgorithmEnum, CacheTableEnum, \
+    start_training_in_process, JobStatus, get_job_status, training_jobs, running_simulations, \
     DatabaseTypeEnum
 from core.model_training import evaluate_cache_model, export_model_to_torchscript
 from core.visualization import visualize_cache_performance
 from database.database_connection import get_database_connection
 from database.tables_enum import TableEnum
 from mock.mock_db import generate_mock_database
-from mock.simulation import simulate_derived_data_weights
+from mock.simulation import simulate_cache_metrics
 from core.utils import is_cuda_available, build_db_url, \
     build_custom_db_url
 
@@ -82,6 +82,22 @@ def available_columns(
     columns = get_derived_cache_columns(db_url)
     return {"available_columns": columns}
 
+@app.get("/feature-columns-enum", response_model=Dict[str, List[str]], tags=["database"])
+def feature_columns_enum(
+    db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
+    host: str = Query(DB_HOST, description="Database hostname"),
+    port: int = Query(DB_PORT, description="Database port"),
+    user: str = Query(DB_USER, description="Database username"),
+    password: str = Query(DB_PASSWORD, description="Database password"),
+    database: str = Query(DB_NAME, description="Database name")
+):
+    """
+    Returns the available feature columns as enum values for selection.
+    """
+    db_url = build_custom_db_url(db_type, host, port, database, user, password)
+    FeatureColumnsEnum = get_dynamic_feature_columns_enum(db_url)
+    return {"feature_columns_enum": [e.value for e in FeatureColumnsEnum]}
+
 @app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new training job")
 async def start_training(
     background_tasks: BackgroundTasks,
@@ -95,8 +111,8 @@ async def start_training(
     cache_size: int = Query(10, description="Size of the cache"),
     max_queries: int = Query(500, description="Maximum number of queries for training"),
     timesteps: int = Query(100000, description="Training timesteps"),
-    table_name: str = Query(CacheTableEnum.CACHE_WEIGHTS, description="Table name for training" + ", ".join([e.value for e in TableEnum])),
-    feature_columns: Optional[List[FeatureColumnsEnum]] = Query(None, description="Select one or more enum values for feature columns" + ", ".join([e.value for e in FeatureColumnsEnum])),
+    table_name: str = Query("cache_metrics",description="Table name for training" + ", ".join([e.value for e in TableEnum])),
+    cache_weights: Optional[List[CacheTableEnum]] = Query(None, description="Select one or more enum values for feature columns" + ", ".join([e.value for e in CacheTableEnum])),
     use_gpu: bool = Query(False, description="Use GPU for training if available"),
     batch_size: Optional[int] = Query(None, description="Batch size for training"),
     learning_rate: Optional[float] = Query(None, description="Learning rate for training")
@@ -117,7 +133,7 @@ async def start_training(
     }
     logger.info("Training job added to queue")
 
-    feature_keys = [f.value for f in feature_columns] if feature_columns else None
+    cache_keys = [f.value for f in cache_weights] if cache_weights else None
 
     background_tasks.add_task(
         start_training_in_process,
@@ -128,7 +144,7 @@ async def start_training(
         max_queries,
         timesteps,
         table_name,
-        feature_keys,
+        cache_keys,
         use_gpu,
         batch_size,
         learning_rate,
@@ -272,7 +288,7 @@ async def start_simulation(
 
         # Start simulation in a separate thread with the database handler
         sim_thread = threading.Thread(
-            target=simulate_derived_data_weights,
+            target=simulate_cache_metrics,
             args=(db_handler, update_interval, None, stop_event),
             daemon=True
         )
@@ -382,12 +398,12 @@ async def get_derived_data_weights(
 
         if endpoint:
             cursor.execute(
-                "SELECT * FROM derived_data_cache_weights WHERE endpoint = %s ORDER BY calculated_priority DESC",
+                "SELECT * FROM cache_metrics WHERE endpoint = %s ORDER BY calculated_priority DESC",
                 (endpoint,)
             )
         else:
             cursor.execute(
-                "SELECT * FROM derived_data_cache_weights ORDER BY calculated_priority DESC"
+                "SELECT * FROM cache_metrics ORDER BY calculated_priority DESC"
             )
 
         results = cursor.fetchall()
@@ -487,6 +503,8 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+
+
 
 
 

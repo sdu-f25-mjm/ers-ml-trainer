@@ -162,25 +162,35 @@ def create_tables(db_handler):
 
     # Derived data cache weights table
     weights_sql = f"""
-    CREATE TABLE IF NOT EXISTS derived_data_cache_weights (
+    CREATE TABLE IF NOT EXISTS cache_metrics (
         id INTEGER PRIMARY KEY {auto_increment},
-        endpoint VARCHAR(50),
-        parameter_hash VARCHAR(64),
-        request_pattern VARCHAR(255),
-        recency FLOAT,
-        usage_frequency FLOAT,
-        time_relevance FLOAT,
-        production_importance FLOAT,
-        volatility FLOAT,
-        complexity FLOAT,
-        calculated_priority FLOAT,
-        last_accessed {timestamp_type},
-        access_count INT
+        cache_name VARCHAR(50) NOT NULL,
+        hit_ratio FLOAT,
+        item_count INT,
+        load_time_ms FLOAT,
+        policy_triggered bit,
+        rl_action_taken VARCHAR(255),
+        size_bytes BIGINT,
+        timestamp {timestamp_type},
+        traffic_intensity FLOAT
     )
     """
     db_handler.execute_query(weights_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_weights_endpoint ON derived_data_cache_weights(endpoint)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_weights_hash ON derived_data_cache_weights(parameter_hash)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_weights_endpoint ON cache_metrics(endpoint)")
+    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_weights_hash ON cache_metrics(parameter_hash)")
+
+    # Best models table
+    best_models_sql = f"""
+    CREATE TABLE IF NOT EXISTS best_models (
+        id INTEGER PRIMARY KEY {auto_increment},
+        model_name VARCHAR(255) NOT NULL,
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        model_base64 LONGTEXT NOT NULL,
+        description TEXT
+    )
+    """
+    db_handler.execute_query(best_models_sql)
 
     logger.info("All tables created successfully")
     return True
+

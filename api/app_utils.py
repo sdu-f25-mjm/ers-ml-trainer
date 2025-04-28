@@ -67,19 +67,11 @@ class AlgorithmEnum(str, Enum):
 
 # Add new enum for training weights
 class CacheTableEnum(str, Enum):
-    CACHE_WEIGHTS = "derived_data_cache_weights"
-
-
-class FeatureColumnsEnum(str, Enum):
-    recency = "recency"
-    access_frequency = "usage_frequency"
-    time_relevance = "time_relevance"
-    production_importance = "production_importance"
-    volatility = "volatility"
-    complexity = "complexity"
-    calculated_priority = "calculated_priority"
-    last_accessed = "last_accessed"
-    access_count = "access_count"
+    HIT_RATIO = "hit_ratio"
+    ITEM_COUNT = "item_count"
+    LOAD_TIME = "load_time_ms"
+    SIZE = "size_bytes"
+    INTENSITY = "traffic_intensity"
 
 
 class TrainingResponse(BaseModel):
@@ -186,12 +178,23 @@ def start_training_in_process(job_id, db_url, algorithm, cache_size, max_queries
         feature_columns, use_gpu, batch_size, learning_rate
     ))
 
-# Utility function to get column names from the derived_data_cache_weights table
+# Utility function to get column names from the cache_metrics table
 def get_derived_cache_columns(db_url: str) -> List[str]:
     try:
         engine = create_engine(db_url)
         inspector = inspect(engine)
-        columns = inspector.get_columns("derived_data_cache_weights")
+        columns = inspector.get_columns("cache_metrics")
         return [col["name"] for col in columns]
     except Exception as e:
         raise Exception(f"Could not retrieve columns: {e}")
+
+def get_dynamic_feature_columns_enum(db_url: str):
+    """
+    Dynamically create a FeatureColumnsEnum based on the columns in cache_metrics.
+    """
+    columns = get_derived_cache_columns(db_url)
+    # Optionally filter out non-feature columns (like id, timestamp, etc.)
+    exclude = {"id", "cache_name", "timestamp"}
+    feature_columns = [col for col in columns if col not in exclude]
+    # Dynamically create the Enum
+    return Enum('FeatureColumnsEnum', {col: col for col in feature_columns})

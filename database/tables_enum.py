@@ -10,6 +10,6 @@ class TableEnum(str, Enum):
     aggregated_production = "aggregated_production"
     comparison_analysis = "comparison_analysis"
     consumption_forecast = "consumption_forecast"
-    derived_data_cache_weights = "derived_data_cache_weights"
+    cache_metrics = "cache_metrics"
 
 

@@ -263,3 +263,22 @@ def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backof
         except Exception as e:
             logger.error(f"Unexpected error connecting to database: {e}")
             return None
+
+
+def save_best_model_base64(conn, model_name, model_base64, description=None):
+    """
+    Save or update the best model in base64 format.
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO best_models (model_name, model_base64, description)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                model_base64 = VALUES(model_base64),
+                description = VALUES(description),
+                created_at = CURRENT_TIMESTAMP
+            """,
+            (model_name, model_base64, description)
+        )
+    conn.commit()

@@ -6,6 +6,7 @@ import os
 import re
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Union, Tuple
+import base64
 
 import numpy as np
 import pandas as pd
@@ -14,8 +15,7 @@ from stable_baselines3 import A2C, PPO, DQN
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
 
-from api.app_utils import AlgorithmEnum, CacheTableEnum, FeatureColumnsEnum
-
+from database.database_connection import save_best_model_base64
 
 from core.cache_environment import create_mariadb_cache_env
 from core.utils import is_cuda_available, print_system_info
@@ -231,6 +231,18 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
         logger.error(f"Failed to export model: {e}")
         raise
 
+def save_best_model(model, model_name, conn, description=None):
+    """
+    Serialize and save the best model in base64 to the database.
+    """
+    import io
+    buffer = io.BytesIO()
+    model.save(buffer)
+    buffer.seek(0)
+    model_bytes = buffer.read()
+    model_base64 = base64.b64encode(model_bytes).decode('utf-8')
+    save_best_model_base64(conn, model_name, model_base64, description)
+
 def train_cache_model(
         db_url,
         algorithm=None,
@@ -419,8 +431,8 @@ def safe_cuda_initialization():
 
 
 def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False,
-                         table_name="derived_data_cache_weights"):
-    """Evaluate a trained cache model with robust GPU handling"""
+                         table_name="cache_metrics"):
+    """Evaluate a trained cache model with robust GPU handling using Gymnasium API."""
     import torch
     import json
     import os
@@ -434,6 +446,7 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
     try:
         # Load feature columns from model metadata if not provided
         metadata_path = f"{model_path.replace('.zip', '')}.meta.json"
+        feature_columns = None
         if os.path.exists(metadata_path):
             try:
                 with open(metadata_path, 'r') as f:
@@ -444,9 +457,9 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
                 logger.warning(f"Failed to load feature columns from metadata: {e}")
 
         # Default feature columns if still None
-
-            from api.app_utils import FeatureColumnsEnum
-            feature_columns = [e.value for e in FeatureColumnsEnum]
+        if not feature_columns:
+            from api.app_utils import CacheTableEnum
+            feature_columns = [e.value for e in CacheTableEnum]
             logger.info(f"Using default feature columns: {feature_columns}")
 
         # Load model with proper device
@@ -467,10 +480,21 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             cache_size=10,
             max_queries=eval_steps
         )
-        # env = Monitor(env)  # Wrap with Monitor for metrics capture
-        obs, _ = env.reset()
 
-        # Initialize metrics
+        # --- SHAPE CHECK: Ensure observation space matches model ---
+        env_obs_shape = env.observation_space.shape
+        model_obs_shape = model.observation_space.shape
+        if env_obs_shape != model_obs_shape:
+            error_msg = (
+                f"Error: Observation shape mismatch. "
+                f"Model expects {model_obs_shape}, but environment provides {env_obs_shape}. "
+                f"Check that feature_columns and cache_size match between training and evaluation."
+            )
+            logger.error(f"Model evaluation failed: {error_msg}")
+            return {"error": error_msg, "success": False}
+
+        # --- GYMNASIUM EVALUATION LOOP ---
+        obs, _ = env.reset()  # Gymnasium reset returns (obs, info)
         total_reward = 0
         done = False
         step_count = 0
@@ -478,36 +502,58 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
         hit_history = []
         rewards = []
         inference_times = []
+        step_reasoning = []  # New: reasoning per step
+        in_cache = []        # New: is item in cache after action
 
-        # Start evaluation
         eval_start = datetime.now()
 
         while not done and step_count < eval_steps:
-            # Measure inference time
+            # Model predicts action given observation
             pred_start = datetime.now()
             action, _ = model.predict(obs, deterministic=True)
             inference_times.append((datetime.now() - pred_start).total_seconds() * 1000)
 
-            # Track cache hit
+            # Step through the environment (Gymnasium API)
             prev_hits = env.cache_hits
+            prev_cache = list(env.cache)  # Copy for reasoning
             obs, reward, terminated, truncated, info = env.step(action)
-            hit_history.append(1 if env.cache_hits > prev_hits else 0)
-
-            # Track rewards
+            hit = env.cache_hits > prev_hits
+            hit_history.append(1 if hit else 0)
             total_reward += reward
             rewards.append(reward)
-
-            # Check termination
             done = terminated or truncated
+
+            # Reasoning: why this score/result
+            if hit:
+                reason = f"Cache HIT: item was already in cache before action."
+            else:
+                if action == 1:
+                    reason = f"Cache MISS: item not in cache, added to cache."
+                else:
+                    reason = f"Cache MISS: item not in cache, not added (action=0)."
+            step_reasoning.append(reason)
+
+            # Is the current item in cache after action?
+            # The current query index points to the next query, so check previous
+            current_idx = (env.current_query_idx - 1) % len(env.data)
+            current_item = env.data.iloc[current_idx]
+            is_in_cache = any(
+                all(current_item[col] == cached_item[col] for col in env.feature_columns)
+                for cached_item in env.cache
+            )
+            in_cache.append(is_in_cache)
+
             step_count += 1
 
-            # Log progress
+            # Optionally log progress
             if step_count % 100 == 0:
                 current_hit_rate = info['cache_hit_rate']
                 saved_hit_rates.append(current_hit_rate)
                 avg_inference = sum(inference_times[-100:]) / len(inference_times[-100:])
                 logger.info(f"Step {step_count}, hit rate: {current_hit_rate:.4f}, "
                             f"avg inference: {avg_inference:.2f}ms")
+
+        # --- END GYMNASIUM EVALUATION LOOP ---
 
         # Calculate evaluation time
         eval_time = (datetime.now() - eval_start).total_seconds()
@@ -525,7 +571,7 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             for i in range(len(hit_history))
         ]
 
-        # Return evaluation metrics
+        # Return evaluation metrics, now with reasoning and in_cache
         return {
             'hit_rates': saved_hit_rates,
             'hit_history': hit_history,
@@ -535,7 +581,9 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             'total_reward': total_reward,
             'avg_inference_time_ms': sum(inference_times) / len(inference_times),
             'evaluation_time_seconds': eval_time,
-            'device_used': device
+            'device_used': device,
+            'step_reasoning': step_reasoning,  # New
+            'in_cache': in_cache               # New
         }
     except Exception as e:
         logger.error(f"Model evaluation failed: {e}")
@@ -546,3 +594,4 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             return evaluate_cache_model(model_path, eval_steps, db_url, use_gpu=False, table_name=table_name)
 
         return {"error": str(e), "success": False}
+

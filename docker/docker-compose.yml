@@ -1,4 +1,30 @@
 services:
+  api-server:
+    image: ers-api-server:latest
+#    ghcr.io/sdu-f25-mjm/ers-api-server:latest
+    #    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - DB_HOST=ers-mariadb
+      - DB_PORT=3306
+      - DB_NAME=cache_db
+      - DB_USER=cacheuser
+      - DB_PASSWORD=cachepass
+      - JPA_OPEN_IN_VIEW=false
+      - JPA_HIBERNATE_DDL_AUTO=update
+      - JPA_SHOW_SQL=true
+      - JPA_HIBERNATE_DIALECT=org.hibernate.dialect.MariaDBDialect
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_USERNAME=
+      - REDIS_PASSWORD=
+    networks:
+      - app-network
+    depends_on:
+      - ers-mariadb
+
   ers-ml-trainer:
     image: ers-ml-trainer:gpu
     build:
@@ -24,6 +50,8 @@ services:
       - API_URL=http://localhost:8000
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
+    networks:
+      - app-network
     runtime: nvidia
     deploy:
       resources:
@@ -48,15 +76,28 @@ services:
       - db_data:/var/lib/mysql
     ports:
       - "3306:3306"
+    networks:
+      - app-network
     healthcheck:
       test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "cacheuser", "-pcachepass" ]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - app-network
+
 volumes:
   db_data:
+  redis_data:
 
 networks:
-  default:
-    name: ers-network
+  app-network:
+    driver: bridge
