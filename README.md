@@ -161,16 +161,18 @@ python -m main --reload
 
 ## API Usage
 
-
-  
 # Evaluate a model
+
 curl -X POST "http://localhost:8000/evaluate/{job_id}?steps=1000"
 
 # Export model to TorchScript
+
 curl -X POST "http://localhost:8000/export/{job_id}"
 
 # View logs
+
 curl "http://localhost:8000/logs?lines=100&level=ERROR"
+
 ```
 
 ## Database Seeding

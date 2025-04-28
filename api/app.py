@@ -2,26 +2,25 @@ import logging
 import os
 import re
 import threading
-
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
 
-
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 
-from api.app_utils import get_derived_cache_columns, get_dynamic_feature_columns_enum, TrainingResponse, AlgorithmEnum, CacheTableEnum, \
+from api.app_utils import get_derived_cache_columns, get_dynamic_feature_columns_enum, TrainingResponse, AlgorithmEnum, \
+    CacheTableEnum, \
     start_training_in_process, JobStatus, get_job_status, training_jobs, running_simulations, \
     DatabaseTypeEnum
+from config import DB_DRIVER, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_URL
 from core.model_training import evaluate_cache_model, export_model_to_torchscript
+from core.utils import is_cuda_available, build_db_url, \
+    build_custom_db_url
 from core.visualization import visualize_cache_performance
 from database.database_connection import get_database_connection
 from database.tables_enum import TableEnum
 from mock.mock_db import generate_mock_database
 from mock.simulation import simulate_cache_metrics
-from core.utils import is_cuda_available, build_db_url, \
-    build_custom_db_url
-from config import DB_DRIVER, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_URL
 
 # Set up logging
 logging.basicConfig(
@@ -59,6 +58,7 @@ async def startup_db_client():
 def health_check():
     return {"status": "ok", "gpu_available": is_cuda_available()}
 
+
 # Example endpoint that returns available columns
 @app.get("/available-columns", response_model=Dict[str, List[str]], tags=["database"])
 def available_columns(
@@ -73,14 +73,15 @@ def available_columns(
     columns = get_derived_cache_columns(db_url)
     return {"available_columns": columns}
 
+
 @app.get("/feature-columns-enum", response_model=Dict[str, List[str]], tags=["database"])
 def feature_columns_enum(
-    db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
-    host: str = Query(DB_HOST, description="Database hostname"),
-    port: int = Query(DB_PORT, description="Database port"),
-    user: str = Query(DB_USER, description="Database username"),
-    password: str = Query(DB_PASSWORD, description="Database password"),
-    database: str = Query(DB_NAME, description="Database name")
+        db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
+        host: str = Query(DB_HOST, description="Database hostname"),
+        port: int = Query(DB_PORT, description="Database port"),
+        user: str = Query(DB_USER, description="Database username"),
+        password: str = Query(DB_PASSWORD, description="Database password"),
+        database: str = Query(DB_NAME, description="Database name")
 ):
     """
     Returns the available feature columns as enum values for selection.
@@ -89,82 +90,83 @@ def feature_columns_enum(
     FeatureColumnsEnum = get_dynamic_feature_columns_enum(db_url)
     return {"feature_columns_enum": [e.value for e in FeatureColumnsEnum]}
 
+
 @app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new training job")
 async def start_training(
-    background_tasks: BackgroundTasks,
-    db_type: str = Query(
-        DB_DRIVER,
-        description="Database driver/dialect for connection (e.g., mysql, postgresql, sqlite)"
-    ),
-    host: str = Query(
-        DB_HOST,
-        description="Hostname or IP address of the database server"
-    ),
-    port: int = Query(
-        DB_PORT,
-        description="Port number where the database server is listening"
-    ),
-    user: str = Query(
-        DB_USER,
-        description="Username with privileges to connect to the database"
-    ),
-    password: str = Query(
-        DB_PASSWORD,
-        description="Password for the database user"
-    ),
-    database: str = Query(
-        DB_NAME,
-        description="Name of the database/schema to connect to"
-    ),
-    algorithm: AlgorithmEnum = Query(
-        AlgorithmEnum.dqn,
-        description="Reinforcement learning algorithm for cache model (options: "
-                    + ", ".join([e.value for e in AlgorithmEnum]) + ")"
-    ),
-    cache_size: int = Query(
-        10,
-        description="Maximum number of items the simulated cache can hold"
-    ),
-    max_queries: int = Query(
-        500,
-        description="Total number of simulated queries to run during training"
-    ),
-    timesteps: int = Query(
-        100000,
-        description="Number of timesteps to execute in the training process"
-    ),
-    table_name: str = Query(
-        "cache_metrics",
-        description="Name of the table containing cache metrics (options: "
-                    + ", ".join([e.value for e in TableEnum]) + ")"
-    ),
-    feature_columns: Optional[List[str]] = Query(
-        None,
-        description=(
-            "Optional list of column names from the cache_metrics table to use as features; "
-            "if omitted, uses all available metric columns from the table."
+        background_tasks: BackgroundTasks,
+        db_type: str = Query(
+            DB_DRIVER,
+            description="Database driver/dialect for connection (e.g., mysql, postgresql, sqlite)"
+        ),
+        host: str = Query(
+            DB_HOST,
+            description="Hostname or IP address of the database server"
+        ),
+        port: int = Query(
+            DB_PORT,
+            description="Port number where the database server is listening"
+        ),
+        user: str = Query(
+            DB_USER,
+            description="Username with privileges to connect to the database"
+        ),
+        password: str = Query(
+            DB_PASSWORD,
+            description="Password for the database user"
+        ),
+        database: str = Query(
+            DB_NAME,
+            description="Name of the database/schema to connect to"
+        ),
+        algorithm: AlgorithmEnum = Query(
+            AlgorithmEnum.dqn,
+            description="Reinforcement learning algorithm for cache model (options: "
+                        + ", ".join([e.value for e in AlgorithmEnum]) + ")"
+        ),
+        cache_size: int = Query(
+            10,
+            description="Maximum number of items the simulated cache can hold"
+        ),
+        max_queries: int = Query(
+            500,
+            description="Total number of simulated queries to run during training"
+        ),
+        timesteps: int = Query(
+            100000,
+            description="Number of timesteps to execute in the training process"
+        ),
+        table_name: str = Query(
+            "cache_metrics",
+            description="Name of the table containing cache metrics (options: "
+                        + ", ".join([e.value for e in TableEnum]) + ")"
+        ),
+        feature_columns: Optional[List[str]] = Query(
+            None,
+            description=(
+                    "Optional list of column names from the cache_metrics table to use as features; "
+                    "if omitted, uses all available metric columns from the table."
+            )
+        ),
+        cache_weights: Optional[List[CacheTableEnum]] = Query(
+            None,
+            description=(
+                    "Optional list of cache metric enum values to apply custom weights in training; "
+                    "defaults to equal weighting across all metrics; valid values: "
+                    + ", ".join([e.value for e in CacheTableEnum]) + "."
+            )
+        ),
+        use_gpu: bool = Query(
+            False,
+            description="Enable GPU acceleration for training if CUDA is available"
+        ),
+        batch_size: Optional[int] = Query(
+            None,
+            description="Batch size for each training update"
+        ),
+        learning_rate: Optional[float] = Query(
+            None,
+            description="Learning rate for the RL optimizer"
         )
-    ),
-    cache_weights: Optional[List[CacheTableEnum]] = Query(
-        None,
-        description=(
-            "Optional list of cache metric enum values to apply custom weights in training; "
-            "defaults to equal weighting across all metrics; valid values: "
-            + ", ".join([e.value for e in CacheTableEnum]) + "."
-        )
-    ),
-    use_gpu: bool = Query(
-        False,
-        description="Enable GPU acceleration for training if CUDA is available"
-    ),
-    batch_size: Optional[int] = Query(
-        None,
-        description="Batch size for each training update"
-    ),
-    learning_rate: Optional[float] = Query(
-        None,
-        description="Learning rate for the RL optimizer"
-    )
 
 ):
     job_id = str(uuid4())
@@ -285,9 +287,6 @@ async def export_job_model(job_id: str, output_dir: str = "best_model"):
         raise HTTPException(status_code=500, detail=f"Failed to export model: {str(e)}")
 
 
-
-
-
 @app.post("/db/seed", response_model=Dict[str, Any], tags=["database"])
 async def seed_database(
         db_type: str = Query(DatabaseTypeEnum.mysql, description="Database type: mysql, postgres, or sqlite"),
@@ -297,7 +296,8 @@ async def seed_database(
         password: str = Query(DB_PASSWORD, description="Database password"),
         database: str = Query(DB_NAME, description="Database name"),
         hours: int = Query(1000, description="Hours of data to generate"),
-        data_types: Optional[List[TableEnum]] = Query(None, description="Data types: " + ", ".join([e.name for e in TableEnum])),
+        data_types: Optional[List[TableEnum]] = Query(None, description="Data types: " + ", ".join(
+            [e.name for e in TableEnum])),
 ):
     """Seed the database with mock energy data"""
     try:
@@ -378,6 +378,7 @@ async def start_simulation(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error starting simulation: {str(e)}")
 
+
 @app.post("/simulation/stop/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"])
 async def stop_simulation(simulation_id: str):
     """Stop a running simulation"""
@@ -439,6 +440,7 @@ async def get_simulation_status(simulation_id: str):
         "running": data["thread"].is_alive()
     }
 
+
 @app.get("/cache/derived/weights", response_model=Dict[str, Any], tags=["cache"])
 async def get_derived_data_weights(
         host: str = Query(DB_HOST, description="Database hostname"),
@@ -482,6 +484,7 @@ async def get_derived_data_weights(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving derived data weights: {str(e)}")
+
 
 # Add this endpoint to app.py
 @app.get("/logs", response_model=Dict[str, Any], tags=["monitoring"])
@@ -568,12 +571,3 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
-
-
-
-
-
-
-
-
-

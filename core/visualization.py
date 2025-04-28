@@ -29,6 +29,9 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
         logger.warning("No hit history data to visualize")
         return None
 
+    # --- Fix: Ensure rewards are all numbers ---
+    rewards = [r if r is not None else 0.0 for r in rewards]
+
     # Create figure with multiple subplots
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12))
 
@@ -106,4 +109,3 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
 
     logger.info(f"Cache visualization saved to {filepath}")
     return filepath
-

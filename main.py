@@ -4,10 +4,11 @@ import logging
 import os
 import sys
 from pathlib import Path
-from api.app import app
 
 import uvicorn
 from dotenv import load_dotenv
+
+from api.app import app
 from config import DB_URL
 
 
@@ -39,7 +40,6 @@ def create_app():
     setup_logging(os.environ.get("LOG_LEVEL", "INFO"))
 
     # Ensure all tables are created at the very beginning of the startup process
-    from database.database_connection import get_database_connection
     from database.create_tables import create_tables
     from mock.mock_db import get_db_handler  # Use your handler factory
 
@@ -50,11 +50,11 @@ def create_app():
         db_type = db_type_full.split("+")[0]  # Only use the base type
         db_handler = get_db_handler(db_type)
         if db_handler.connect(
-            host=os.getenv("DB_HOST", "localhost"),
-            port=int(os.getenv("DB_PORT", 3306)),
-            user=os.getenv("DB_USER", "cacheuser"),
-            password=os.getenv("DB_PASSWORD", "cachepass"),
-            database=os.getenv("DB_NAME", "cache_db")
+                host=os.getenv("DB_HOST", "localhost"),
+                port=int(os.getenv("DB_PORT", 3306)),
+                user=os.getenv("DB_USER", "cacheuser"),
+                password=os.getenv("DB_PASSWORD", "cachepass"),
+                database=os.getenv("DB_NAME", "cache_db")
         ):
             try:
                 create_tables(db_handler)

@@ -1,14 +1,12 @@
 import asyncio
 import logging
-
 from datetime import datetime
-from typing import List, Optional, Dict, Any
 from enum import Enum
+from typing import List, Optional, Dict, Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy import create_engine, inspect
-
 
 from core.utils import list_available_models, is_cuda_available
 from core.visualization import visualize_cache_performance
@@ -26,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 running_simulations = {}
 training_jobs = {}
+
 
 def load_trained_models():
     """
@@ -51,6 +50,7 @@ def load_trained_models():
 # Initialize the training_jobs dictionary with existing models
 load_trained_models()
 
+
 # database types
 class DatabaseTypeEnum(str, Enum):
     mysql = "mysql"
@@ -59,11 +59,13 @@ class DatabaseTypeEnum(str, Enum):
     oracle = "oracle"
     mssql = "mssql"
 
+
 # Define allowed algorithms
 class AlgorithmEnum(str, Enum):
     dqn = "dqn"
     a2c = "a2c"
     ppo = "ppo"
+
 
 # Add new enum for training weights
 class CacheTableEnum(str, Enum):
@@ -88,7 +90,9 @@ class JobStatus(BaseModel):
     model_path: Optional[str] = None
     metrics: Optional[Dict[str, Any]] = None
 
+
 from core.model_training import train_cache_model, evaluate_cache_model
+
 
 def get_job_status(job_id: str):
     if job_id not in training_jobs:
@@ -166,19 +170,20 @@ async def run_training_job(
             "traceback": traceback.format_exc()
         })
 
+
 def start_training_in_process(
-    job_id: str,
-    db_url: str,
-    algorithm: AlgorithmEnum,
-    cache_size: int,
-    max_queries: int,
-    timesteps: int,
-    table_name: str,
-    cache_keys: Optional[List[str]],
-    use_gpu: bool,
-    batch_size: Optional[int],
-    learning_rate: Optional[float],
-    feature_columns: List[str]                        # added parameter
+        job_id: str,
+        db_url: str,
+        algorithm: AlgorithmEnum,
+        cache_size: int,
+        max_queries: int,
+        timesteps: int,
+        table_name: str,
+        cache_keys: Optional[List[str]],
+        use_gpu: bool,
+        batch_size: Optional[int],
+        learning_rate: Optional[float],
+        feature_columns: List[str]  # added parameter
 ):
     """
     Background task wrapper for running training.
@@ -193,11 +198,12 @@ def start_training_in_process(
         max_queries=max_queries,
         timesteps=timesteps,
         table_name=table_name,
-        feature_columns=feature_columns,                # pass through
+        feature_columns=feature_columns,  # pass through
         use_gpu=use_gpu,
         batch_size=batch_size,
         learning_rate=learning_rate
     ))
+
 
 # Utility function to get column names from the cache_metrics table
 def get_derived_cache_columns(db_url: str) -> List[str]:
@@ -209,6 +215,7 @@ def get_derived_cache_columns(db_url: str) -> List[str]:
     except Exception as e:
         raise Exception(f"Could not retrieve columns: {e}")
 
+
 def get_dynamic_feature_columns_enum(db_url: str):
     """
     Dynamically create a FeatureColumnsEnum based on the columns in cache_metrics.
@@ -219,4 +226,3 @@ def get_dynamic_feature_columns_enum(db_url: str):
     feature_columns = [col for col in columns if col not in exclude]
     # Dynamically create the Enum
     return Enum('FeatureColumnsEnum', {col: col for col in feature_columns})
-

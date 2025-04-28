@@ -1,7 +1,7 @@
 services:
   api-server:
     image: ers-api-server:latest
-#    ghcr.io/sdu-f25-mjm/ers-api-server:latest
+    #    ghcr.io/sdu-f25-mjm/ers-api-server:latest
     #    build: .
     ports:
       - "8080:8080"

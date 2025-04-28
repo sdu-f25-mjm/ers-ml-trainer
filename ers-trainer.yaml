@@ -13,7 +13,7 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema: { }
   /available-columns:
     get:
       tags:

@@ -2,9 +2,7 @@
 import logging
 import random
 import time
-import json
 from datetime import datetime, timedelta
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +123,8 @@ def simulate_cache_metrics(db_handler, update_interval=5, run_duration=None, sto
                         load_time_ms = max(1.0, item.get('load_time_ms', 50.0) + random.uniform(-2, 2))
                         policy_triggered = random.choice([0, 1])
                         rl_action_taken = random.choice(["evict", "keep", "promote", "demote"])
-                        size_bytes = max(1_000_000, item.get('size_bytes', 10_000_000) + random.randint(-100_000, 100_000))
+                        size_bytes = max(1_000_000,
+                                         item.get('size_bytes', 10_000_000) + random.randint(-100_000, 100_000))
                         traffic_intensity = max(0.01, item.get('traffic_intensity', 1.0) + random.uniform(-0.05, 0.05))
 
                         query = f"""
@@ -161,7 +160,6 @@ def simulate_cache_metrics(db_handler, update_interval=5, run_duration=None, sto
 def generate_random_parameters(endpoint_name):
     """Generate realistic random parameters for the given endpoint"""
     import random
-    import json
     from datetime import datetime, timedelta
 
     base_date = datetime.now()
@@ -244,4 +242,3 @@ def calculate_priority(weights, recency, frequency, time_relevance,
             weights['volatility'] * volatility +
             weights['complexity'] * complexity
     )
-

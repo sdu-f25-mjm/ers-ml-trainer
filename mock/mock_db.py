@@ -50,6 +50,7 @@ def get_random_date_between(start_date, end_date):
     random_date = start_date + timedelta(seconds=random_seconds)
     return random_date
 
+
 def get_db_handler(db_type):
     """Get the appropriate database handler based on type"""
     if db_type == 'mysql':
@@ -88,7 +89,7 @@ def generate_energy_data(db_handler, hours, price_areas):
 
     for hour in range(hours):
         # Calculate timestamp for current hour
-        hour_timestamp = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now()).isoformat()
+        hour_timestamp = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now()).isoformat()
         for area in price_areas:
             # Generate random energy values
             central_power = random.uniform(0, 1000)
@@ -112,7 +113,6 @@ def generate_energy_data(db_handler, hours, price_areas):
 
 
 def generate_production_data(db_handler, hours, price_areas, types):
-
     placeholder = db_handler.get_placeholder_symbol()
 
     insert_query = f"""
@@ -127,10 +127,8 @@ def generate_production_data(db_handler, hours, price_areas, types):
                 {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}
                 )"""
 
-
-
     for hour_offset in range(hours):
-        ts = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now()).isoformat()
+        ts = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now()).isoformat()
         for price_area in price_areas:
             # Initialize all production values to zero.
             wind_total = offshore_total = offshore_lt = offshore_ge = onshore = 0
@@ -178,7 +176,6 @@ def generate_production_data(db_handler, hours, price_areas, types):
                       commercial_self, central, hydro, local)
             db_handler.execute_query(insert_query, params)
 
-
     db_handler.commit()
     logger.info("Mock production data generation completed.")
 
@@ -199,7 +196,7 @@ def generate_consumption_data(db_handler, hours, price_areas):
 
     # Loop over each hour and each price area to generate a record.
     for i in range(hours):
-        timestamp = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now()).isoformat()
+        timestamp = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now()).isoformat()
         for area in price_areas:
             consumption_total = random.uniform(100, 500)  # Example ranges
             consumption_private = random.uniform(50, consumption_total)
@@ -229,7 +226,6 @@ def generate_consumption_data(db_handler, hours, price_areas):
             )
             """
 
-
             params = (
                 timestamp, area, consumption_total, consumption_private,
                 consumption_public, consumption_commertial, grid_loss_transmission,
@@ -247,7 +243,7 @@ def generate_exchange_data(db_handler, hours, countries):
     price_areas = ["DK1", "DK2"]
     for hour in range(hours):
         # Generate a timestamp for this hour
-        ts = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now()).isoformat()
+        ts = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now()).isoformat()
         for country in countries:
             # Randomly select a price area
             price_area = random.choice(price_areas)
@@ -257,15 +253,14 @@ def generate_exchange_data(db_handler, hours, countries):
             net_exchange = round(export_mwh - import_mwh, 2)
 
             query = """
-            INSERT INTO exchange_data (
-                timestamp,
-                price_area,
-                exchange_country,
-                import_mwh,
-                export_mwh,
-                net_exchange_mwh
-            ) VALUES (%s, %s, %s, %s, %s, %s)
-            """
+                    INSERT INTO exchange_data (timestamp,
+                                               price_area,
+                                               exchange_country,
+                                               import_mwh,
+                                               export_mwh,
+                                               net_exchange_mwh)
+                    VALUES (%s, %s, %s, %s, %s, %s) \
+                    """
             params = (ts, price_area, country, import_mwh, export_mwh, net_exchange)
             db_handler.execute_query(query, params)
 
@@ -284,7 +279,7 @@ def generate_carbon_intensity_data(db_handler, hours, price_areas):
     now = datetime.now()
 
     for h in range(hours):
-        timestamp = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now()).isoformat()
+        timestamp = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now()).isoformat()
         for area in price_areas:
             # Generate a random carbon intensity value.
             carbon_intensity = round(random.uniform(50, 150), 2)
@@ -333,7 +328,7 @@ def generate_aggregated_production(db_handler, hours, aggregationTypes, price_ar
     for i in range(hours):
         # Calculate the random time from 1970-01-01-00 to now in  YYYY-MM-DD HH:MM:SS.mmmmmm
 
-        current_time = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now())
+        current_time = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now())
         # Loop over each price area
         for area in price_areas:
             # For each defined aggregation type
@@ -397,7 +392,7 @@ def generate_comparison_analysis(db_handler, hours, comparisonTypes, price_areas
      - Computes both the absolute difference and percentage change.
      - Inserts the computed values into the 'comparison_analysis' table.
     """
-    now = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now())
+    now = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now())
     period_duration = timedelta(days=1)  # Duration for each period
     placeholder = db_handler.get_placeholder_symbol()
 
@@ -478,7 +473,7 @@ def generate_consumption_forecast(db_handler, hours, horizon, price_areas):
 
     for price_area in price_areas:
         forecast_data = []
-        forecast_start = get_random_date_between(datetime(1970,1,1,0,0,0,000), datetime.now())
+        forecast_start = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now())
 
         for hour in range(hours):
             for i in range(horizon):
@@ -513,6 +508,7 @@ def generate_consumption_forecast(db_handler, hours, horizon, price_areas):
 
     db_handler.commit()
     return forecast_entries
+
 
 def generate_mock_database(
         host=DB_HOST,
@@ -549,7 +545,6 @@ def generate_mock_database(
             "comparison_analysis", "consumption_forecast", "cache_metrics"
         ]
 
-
     price_areas = ["DK1", "DK2"]
     countries = ["germany", "greatbritain", "netherlands", "norway", "sweden"]
     types = ["wind", "solar", "hydro", "commercialPower", "centralPower", "local"]
@@ -568,8 +563,6 @@ def generate_mock_database(
             "carbon_intensity", "aggregated_production",
             "comparison_analysis", "consumption_forecast", "cache_metrics"
         ]
-
-
 
     logger.info(f"Generating mock database for {db_type} with {hours} hours of data for: {', '.join(price_areas)}")
     try:

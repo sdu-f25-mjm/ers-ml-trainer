@@ -12,6 +12,8 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError
 from core.utils import build_db_url
 
 build_db_url()
+
+
 def retry_with_backoff(max_retries=5, initial_backoff=1, max_backoff=60):
     """
     Decorator that retries the function with exponential backoff on database errors.
@@ -21,6 +23,7 @@ def retry_with_backoff(max_retries=5, initial_backoff=1, max_backoff=60):
         initial_backoff: Initial backoff time in seconds
         max_backoff: Maximum backoff time in seconds
     """
+
     def decorator(func):
         def wrapper(*args, **kwargs):
             retries = 0
@@ -34,7 +37,9 @@ def retry_with_backoff(max_retries=5, initial_backoff=1, max_backoff=60):
                         raise e
                     time.sleep(backoff)
                     backoff = min(backoff * 2, max_backoff)
+
         return wrapper
+
     return decorator
 
 
@@ -82,6 +87,7 @@ def create_database_connection(db_url=None) -> Engine:
     except Exception as e:
         logger.error(f"Unexpected error connecting to database: {e}")
         raise
+
 
 def check_connection_health(engine: Engine) -> bool:
     """
@@ -265,20 +271,22 @@ def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backof
             return None
 
 
-def save_best_model_base64(conn, model_name, model_base64, description=None):
+def save_best_model_base64(engine, model_name: str, model_base64: str, description: str = None):
     """
-    Save or update the best model in base64 format.
+    Insert a base64‐encoded model into the best_models table.
     """
-    with conn.cursor() as cursor:
-        cursor.execute(
-            """
-            INSERT INTO best_models (model_name, model_base64, description)
-            VALUES (%s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                model_base64 = VALUES(model_base64),
-                description = VALUES(description),
-                created_at = CURRENT_TIMESTAMP
-            """,
-            (model_name, model_base64, description)
-        )
-    conn.commit()
+    logger = logging.getLogger(__name__)
+    stmt = text("""
+        INSERT INTO best_models
+          (model_name, model_base64, description, created_at)
+        VALUES
+          (:name, :data, :desc, NOW())
+    """)
+    with engine.connect() as conn:
+        try:
+            conn.execute(stmt, {"name": model_name, "data": model_base64, "desc": description})
+            conn.commit()
+            logger.info(f"Saved best model '{model_name}' to best_models table.")
+        except Exception as e:
+            logger.error(f"Failed to save best model to database: {e}")
+            raise
