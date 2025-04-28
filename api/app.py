@@ -21,6 +21,7 @@ from mock.mock_db import generate_mock_database
 from mock.simulation import simulate_cache_metrics
 from core.utils import is_cuda_available, build_db_url, \
     build_custom_db_url
+from config import DB_DRIVER, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_URL
 
 # Set up logging
 logging.basicConfig(
@@ -40,16 +41,6 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/"
 )
-API = os.getenv("API_URL", "localhost:8000")
-DB_DRIVER = os.getenv("DB_DRIVER", "mysql+mysqlconnector")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", 3306)
-DB_NAME = os.getenv("DB_NAME", "cache_db")
-DB_USER = os.getenv("DB_USER", "cacheuser")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "cachepass")
-DB_URL = os.getenv("DB_URL", f"{DB_DRIVER}://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
-
-
 
 
 @app.on_event("startup")
@@ -503,6 +494,7 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+
 
 
 

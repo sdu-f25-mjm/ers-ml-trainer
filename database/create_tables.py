@@ -1,8 +1,13 @@
-# database/create_tables.py
 import logging
 
 logger = logging.getLogger(__name__)
 
+def safe_execute(db_handler, sql, description):
+    try:
+        db_handler.execute_query(sql)
+        logger.info(f"Table/index for '{description}' created or already exists.")
+    except Exception as e:
+        logger.error(f"Failed to create table/index for '{description}': {e}")
 
 def create_tables(db_handler):
     """Create all necessary database tables using the provided handler"""
@@ -25,9 +30,9 @@ def create_tables(db_handler):
         grid_loss_transmission_mwh FLOAT
     )
     """
-    db_handler.execute_query(energy_table_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_energy_hour ON energy_data(timestamp)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_energy_area ON energy_data(price_area)")
+    safe_execute(db_handler, energy_table_sql, "energy_data")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_energy_hour ON energy_data(timestamp)", "energy_data timestamp index")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_energy_area ON energy_data(price_area)", "energy_data price_area index")
 
     # Production data table
     production_table_sql = f"""
@@ -54,9 +59,9 @@ def create_tables(db_handler):
         local_power_mwh FLOAT
     )
     """
-    db_handler.execute_query(production_table_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_production_ts ON production_data(timestamp)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_production_area ON production_data(price_area)")
+    safe_execute(db_handler, production_table_sql, "production_data")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_production_ts ON production_data(timestamp)", "production_data timestamp index")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_production_area ON production_data(price_area)", "production_data price_area index")
 
     # Consumption data table
     consumption_table_sql = f"""
@@ -74,9 +79,9 @@ def create_tables(db_handler):
         power_to_heat_mwh FLOAT
     )
     """
-    db_handler.execute_query(consumption_table_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_consumption_ts ON consumption_data(timestamp)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_consumption_area ON consumption_data(price_area)")
+    safe_execute(db_handler, consumption_table_sql, "consumption_data")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_consumption_ts ON consumption_data(timestamp)", "consumption_data timestamp index")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_consumption_area ON consumption_data(price_area)", "consumption_data price_area index")
 
     # Exchange data table
     exchange_table_sql = f"""
@@ -90,9 +95,9 @@ def create_tables(db_handler):
         net_exchange_mwh FLOAT
     )
     """
-    db_handler.execute_query(exchange_table_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_exchange_ts ON exchange_data(timestamp)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_exchange_area ON exchange_data(price_area)")
+    safe_execute(db_handler, exchange_table_sql, "exchange_data")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_exchange_ts ON exchange_data(timestamp)", "exchange_data timestamp index")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_exchange_area ON exchange_data(price_area)", "exchange_data price_area index")
 
     # Carbon intensity data table
     carbon_table_sql = f"""
@@ -104,9 +109,9 @@ def create_tables(db_handler):
         energy_mix TEXT
     )
     """
-    db_handler.execute_query(carbon_table_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_carbon_ts ON carbon_intensity(timestamp)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_carbon_area ON carbon_intensity(price_area)")
+    safe_execute(db_handler, carbon_table_sql, "carbon_intensity")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_carbon_ts ON carbon_intensity(timestamp)", "carbon_intensity timestamp index")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_carbon_area ON carbon_intensity(price_area)", "carbon_intensity price_area index")
 
     # Aggregated production table
     aggregated_production_sql = f"""
@@ -124,9 +129,9 @@ def create_tables(db_handler):
         central_production_mwh FLOAT
     )
     """
-    db_handler.execute_query(aggregated_production_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_agg_prod_start ON aggregated_production(period_start)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_agg_prod_area ON aggregated_production(price_area)")
+    safe_execute(db_handler, aggregated_production_sql, "aggregated_production")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_agg_prod_start ON aggregated_production(period_start)", "aggregated_production period_start index")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_agg_prod_area ON aggregated_production(price_area)", "aggregated_production price_area index")
 
     # Comparison analysis table
     comparison_sql = f"""
@@ -143,8 +148,8 @@ def create_tables(db_handler):
         percentage_change TEXT
     )
     """
-    db_handler.execute_query(comparison_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_comparison_area ON comparison_analysis(price_area)")
+    safe_execute(db_handler, comparison_sql, "comparison_analysis")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_comparison_area ON comparison_analysis(price_area)", "comparison_analysis price_area index")
 
     # Consumption forecast table
     consumption_forecast_sql = f"""
@@ -156,9 +161,9 @@ def create_tables(db_handler):
         forecast_data LONGTEXT
     )
     """
-    db_handler.execute_query(consumption_forecast_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_forecast_date ON consumption_forecast(request_date)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_forecast_area ON consumption_forecast(price_area)")
+    safe_execute(db_handler, consumption_forecast_sql, "consumption_forecast")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_forecast_date ON consumption_forecast(request_date)", "consumption_forecast request_date index")
+    safe_execute(db_handler, "CREATE INDEX IF NOT EXISTS idx_forecast_area ON consumption_forecast(price_area)", "consumption_forecast price_area index")
 
     # Derived data cache weights table
     weights_sql = f"""
@@ -175,9 +180,7 @@ def create_tables(db_handler):
         traffic_intensity FLOAT
     )
     """
-    db_handler.execute_query(weights_sql)
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_weights_endpoint ON cache_metrics(endpoint)")
-    db_handler.execute_query("CREATE INDEX IF NOT EXISTS idx_weights_hash ON cache_metrics(parameter_hash)")
+    safe_execute(db_handler, weights_sql, "cache_metrics")
 
     # Best models table
     best_models_sql = f"""
@@ -189,8 +192,8 @@ def create_tables(db_handler):
         description TEXT
     )
     """
-    db_handler.execute_query(best_models_sql)
+    safe_execute(db_handler, best_models_sql, "best_models")
 
-    logger.info("All tables created successfully")
+    logger.info("All tables creation attempted (see errors above if any failed)")
     return True
 

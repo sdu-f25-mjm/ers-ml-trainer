@@ -18,7 +18,7 @@ from stable_baselines3.common.monitor import Monitor
 from database.database_connection import save_best_model_base64
 
 from core.cache_environment import create_mariadb_cache_env
-from core.utils import is_cuda_available, print_system_info
+from core.utils import is_cuda_available
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 
 def configure_gpu_environment():
     """Configure GPU environment if available"""
-    print_system_info()
 
     if not is_cuda_available():
         logger.warning("CUDA is not available. Using CPU only.")
