@@ -85,7 +85,7 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
         table.scale(1, 1.2)
 
     # Add metadata
-    plt.tight_layout()
+    fig.set_constrained_layout(True)
 
     # Add more evaluation metrics to the figure annotation
     evaluation_time = evaluation_results.get('evaluation_time_seconds', 0)
@@ -109,3 +109,4 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
 
     logger.info(f"Cache visualization saved to {filepath}")
     return filepath
+
