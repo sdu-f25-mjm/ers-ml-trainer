@@ -166,16 +166,37 @@ async def run_training_job(
             "traceback": traceback.format_exc()
         })
 
-def start_training_in_process(job_id, db_url, algorithm, cache_size, max_queries,
-                              timesteps,table_name, feature_columns,
-                              use_gpu, batch_size, learning_rate
-                              ):
-    """Start training in a separate process."""
+def start_training_in_process(
+    job_id: str,
+    db_url: str,
+    algorithm: AlgorithmEnum,
+    cache_size: int,
+    max_queries: int,
+    timesteps: int,
+    table_name: str,
+    cache_keys: Optional[List[str]],
+    use_gpu: bool,
+    batch_size: Optional[int],
+    learning_rate: Optional[float],
+    feature_columns: List[str]                        # added parameter
+):
+    """
+    Background task wrapper for running training.
+    """
     logger.info(f"Starting training for job {job_id}")
-    # Run training job asynchronously in a process
+    # invoke training with feature_columns
     asyncio.run(run_training_job(
-        job_id, db_url, algorithm, cache_size, max_queries, timesteps,table_name,
-        feature_columns, use_gpu, batch_size, learning_rate
+        job_id=job_id,
+        db_url=db_url,
+        algorithm=algorithm,
+        cache_size=cache_size,
+        max_queries=max_queries,
+        timesteps=timesteps,
+        table_name=table_name,
+        feature_columns=feature_columns,                # pass through
+        use_gpu=use_gpu,
+        batch_size=batch_size,
+        learning_rate=learning_rate
     ))
 
 # Utility function to get column names from the cache_metrics table
@@ -198,3 +219,4 @@ def get_dynamic_feature_columns_enum(db_url: str):
     feature_columns = [col for col in columns if col not in exclude]
     # Dynamically create the Enum
     return Enum('FeatureColumnsEnum', {col: col for col in feature_columns})
+

@@ -92,21 +92,80 @@ def feature_columns_enum(
 @app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new training job")
 async def start_training(
     background_tasks: BackgroundTasks,
-    db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
-    host: str = Query(DB_HOST, description="Database hostname"),
-    port: int = Query(DB_PORT, description="Database port"),
-    user: str = Query(DB_USER, description="Database username"),
-    password: str = Query(DB_PASSWORD, description="Database password"),
-    database: str = Query(DB_NAME, description="Database name"),
-    algorithm: AlgorithmEnum = Query(AlgorithmEnum.dqn, description="RL algorithm to use" + ", ".join([e.value for e in AlgorithmEnum])),
-    cache_size: int = Query(10, description="Size of the cache"),
-    max_queries: int = Query(500, description="Maximum number of queries for training"),
-    timesteps: int = Query(100000, description="Training timesteps"),
-    table_name: str = Query("cache_metrics",description="Table name for training" + ", ".join([e.value for e in TableEnum])),
-    cache_weights: Optional[List[CacheTableEnum]] = Query(None, description="Select one or more enum values for feature columns" + ", ".join([e.value for e in CacheTableEnum])),
-    use_gpu: bool = Query(False, description="Use GPU for training if available"),
-    batch_size: Optional[int] = Query(None, description="Batch size for training"),
-    learning_rate: Optional[float] = Query(None, description="Learning rate for training")
+    db_type: str = Query(
+        DB_DRIVER,
+        description="Database driver/dialect for connection (e.g., mysql, postgresql, sqlite)"
+    ),
+    host: str = Query(
+        DB_HOST,
+        description="Hostname or IP address of the database server"
+    ),
+    port: int = Query(
+        DB_PORT,
+        description="Port number where the database server is listening"
+    ),
+    user: str = Query(
+        DB_USER,
+        description="Username with privileges to connect to the database"
+    ),
+    password: str = Query(
+        DB_PASSWORD,
+        description="Password for the database user"
+    ),
+    database: str = Query(
+        DB_NAME,
+        description="Name of the database/schema to connect to"
+    ),
+    algorithm: AlgorithmEnum = Query(
+        AlgorithmEnum.dqn,
+        description="Reinforcement learning algorithm for cache model (options: "
+                    + ", ".join([e.value for e in AlgorithmEnum]) + ")"
+    ),
+    cache_size: int = Query(
+        10,
+        description="Maximum number of items the simulated cache can hold"
+    ),
+    max_queries: int = Query(
+        500,
+        description="Total number of simulated queries to run during training"
+    ),
+    timesteps: int = Query(
+        100000,
+        description="Number of timesteps to execute in the training process"
+    ),
+    table_name: str = Query(
+        "cache_metrics",
+        description="Name of the table containing cache metrics (options: "
+                    + ", ".join([e.value for e in TableEnum]) + ")"
+    ),
+    feature_columns: Optional[List[str]] = Query(
+        None,
+        description=(
+            "Optional list of column names from the cache_metrics table to use as features; "
+            "if omitted, uses all available metric columns from the table."
+        )
+    ),
+    cache_weights: Optional[List[CacheTableEnum]] = Query(
+        None,
+        description=(
+            "Optional list of cache metric enum values to apply custom weights in training; "
+            "defaults to equal weighting across all metrics; valid values: "
+            + ", ".join([e.value for e in CacheTableEnum]) + "."
+        )
+    ),
+    use_gpu: bool = Query(
+        False,
+        description="Enable GPU acceleration for training if CUDA is available"
+    ),
+    batch_size: Optional[int] = Query(
+        None,
+        description="Batch size for each training update"
+    ),
+    learning_rate: Optional[float] = Query(
+        None,
+        description="Learning rate for the RL optimizer"
+    )
+
 ):
     job_id = str(uuid4())
     logger.info(f"Starting training job {job_id}")
@@ -126,6 +185,20 @@ async def start_training(
 
     cache_keys = [f.value for f in cache_weights] if cache_weights else None
 
+    # fetch actual columns once
+    available_cols = get_derived_cache_columns(db_url)
+
+    if feature_columns:
+        invalid = [col for col in feature_columns if col not in available_cols]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid feature columns: {invalid}"
+            )
+        selected_features = feature_columns
+    else:
+        selected_features = available_cols
+
     background_tasks.add_task(
         start_training_in_process,
         job_id,
@@ -139,6 +212,7 @@ async def start_training(
         use_gpu,
         batch_size,
         learning_rate,
+        selected_features
     )
 
     return {
@@ -494,6 +568,9 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+
+
+
 
 
 
