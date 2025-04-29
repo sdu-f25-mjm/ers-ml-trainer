@@ -107,7 +107,7 @@ def url_hash(url_string):
     return hashlib.md5(url_string.encode()).hexdigest()
 
 def simulate_visits(
-    n=100,
+    n=10000,  # Increased default from 100 to 10000 (or any larger number)
     sleep=0,
     db_handler=None,
     update_interval=5,
@@ -190,4 +190,3 @@ def simulate_visits(
         if sleep:
             time.sleep(sleep)
         i += 1
-

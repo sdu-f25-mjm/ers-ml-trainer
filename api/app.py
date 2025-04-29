@@ -331,7 +331,8 @@ async def start_simulation(
         password: str = Query("cachepass"),
         database: str = Query("cache_db"),
         update_interval: int = Query(5),
-        simulation_id: str = Query(None)
+        simulation_id: str = Query(None),
+        n: int = Query(10000, description="Number of simulated visits to generate"),
 ):
     try:
         sim_id = simulation_id or f"sim_{uuid4()}"
@@ -348,7 +349,7 @@ async def start_simulation(
 
         sim_thread = threading.Thread(
             target=simulate_visits,
-            args=(100, update_interval, db_handler, update_interval, None, stop_event),  # adapt as needed
+            args=(n, update_interval, db_handler, update_interval, None, stop_event),  # adapt as needed
             daemon=True
         )
         sim_thread.start()

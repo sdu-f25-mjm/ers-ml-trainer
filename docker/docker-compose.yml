@@ -1,6 +1,6 @@
 services:
   api-server:
-    image: ers-api-server:latest
+    image: ers-api-server-api-server:latest
     #    ghcr.io/sdu-f25-mjm/ers-api-server:latest
     #    build: .
     ports:
@@ -24,6 +24,17 @@ services:
       - app-network
     depends_on:
       - ers-mariadb
+  frontend:
+    image: ers-frontend-server-frontend:latest
+#    build:
+#      context: .
+    environment:
+      - VITE_API_BASE_URL=http://api-server:8080
+    ports:
+      - "80:80"
+    networks:
+      - app-network
+    restart: unless-stopped
 
   ers-ml-trainer:
     image: ers-ml-trainer:cpu
