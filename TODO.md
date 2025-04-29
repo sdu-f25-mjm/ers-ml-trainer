@@ -47,15 +47,7 @@
     - [x] Provide clearer error messages and suggestions for resolving persistent mismatches.
     - [x] Log the values of feature_columns and cache_size used in both training and evaluation for debugging.
     - [x] Enhance logic to handle cases where auto-adjusted shape still mismatches expected shape.
-    - [ ] Add user-facing documentation or API guidance: **If you see an observation shape mismatch, ensure you use the same `feature_columns` and `cache_size` for both training and evaluation.**  
-          Example:  
-          ```python
-          with open(f"{model_path}.meta.json") as f:
-              meta = json.load(f)
-          feature_columns = meta["feature_columns"]
-          cache_size = meta["cache_size"]
-          # Pass these to evaluate_cache_model(..., feature_columns=feature_columns, cache_size=cache_size)
-          ```
+    - [ ] Add user-facing documentation or API guidance: **If you see an observation shape mismatch, ensure you use the same `feature_columns` and `cache_size` for both training and evaluation.*
     - [ ] Expose an API endpoint to fetch `feature_columns` and `cache_size` from model metadata for user convenience.
 - [ ] Standardize evaluation output format.
     - [x] Include a `success: true` flag on successful runs.

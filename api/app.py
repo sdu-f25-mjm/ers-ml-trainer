@@ -20,6 +20,7 @@ from core.visualization import visualize_cache_performance
 from database.database_connection import get_database_connection
 from database.tables_enum import TableEnum
 from mock.mock_db import generate_mock_database
+from mock.simulate_live import simulate_visits
 from mock.simulation import simulate_cache_metrics
 
 # Set up logging
@@ -40,7 +41,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/"
 )
-
+running_simulations = {}
 
 @app.on_event("startup")
 async def startup_db_client():
@@ -323,43 +324,35 @@ async def seed_database(
 
 @app.post("/simulation/start", response_model=Dict[str, Any], tags=["simulation"])
 async def start_simulation(
-        db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
-        host: str = Query(DB_HOST, description="Database hostname"),
-        port: int = Query(DB_PORT, description="Database port"),
-        user: str = Query(DB_USER, description="Database username"),
-        password: str = Query(DB_PASSWORD, description="Database password"),
-        database: str = Query(DB_NAME, description="Database name"),
-        update_interval: int = Query(5, description="Simulation update interval in seconds"),
-        simulation_id: str = Query(None, description="Optional custom simulation ID")
+        db_type: str = Query("mysql"),
+        host: str = Query("localhost"),
+        port: int = Query(3306),
+        user: str = Query("cacheuser"),
+        password: str = Query("cachepass"),
+        database: str = Query("cache_db"),
+        update_interval: int = Query(5),
+        simulation_id: str = Query(None)
 ):
-    """Start a simulation of derived data usage"""
     try:
-        # Generate a unique ID for this simulation if not provided
         sim_id = simulation_id or f"sim_{uuid4()}"
-
-        # Check if a simulation with this ID is already running
         if sim_id in running_simulations:
             return {"status": "already_running", "simulation_id": sim_id}
 
-        # Get the appropriate database handler instead of a raw connection
         from mock.mock_db import get_db_handler
-        db_handler = get_db_handler(db_type.split('+')[0])  # Extract base type (mysql, postgres, etc.)
 
+        db_handler = get_db_handler(db_type.split('+')[0])
         if not db_handler.connect(host, port, user, password, database):
             raise HTTPException(status_code=500, detail=f"Failed to connect to {db_type} database")
 
-        # Create stop event for this simulation
         stop_event = threading.Event()
 
-        # Start simulation in a separate thread with the database handler
         sim_thread = threading.Thread(
-            target=simulate_cache_metrics,
-            args=(db_handler, update_interval, None, stop_event),
+            target=simulate_visits,
+            args=(100, update_interval, db_handler, update_interval, None, stop_event),  # adapt as needed
             daemon=True
         )
         sim_thread.start()
 
-        # Store thread and stop event in global registry
         running_simulations[sim_id] = {
             "thread": sim_thread,
             "stop_event": stop_event,

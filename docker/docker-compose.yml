@@ -26,10 +26,10 @@ services:
       - ers-mariadb
 
   ers-ml-trainer:
-    image: ers-ml-trainer:gpu
+    image: ers-ml-trainer:cpu
     build:
       context: ..
-      dockerfile: docker/Dockerfile.gpu
+      dockerfile: docker/Dockerfile.cpu
     container_name: ers-ml-trainer
     ports:
       - "8000:8000"

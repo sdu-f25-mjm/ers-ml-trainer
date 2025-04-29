@@ -187,6 +187,7 @@ def create_tables(db_handler):
     CREATE TABLE IF NOT EXISTS cache_metrics (
         id INTEGER PRIMARY KEY {auto_increment},
         cache_name VARCHAR(50) NOT NULL,
+        cache_key VARCHAR(255) not null,
         hit_ratio FLOAT,
         item_count INT,
         load_time_ms FLOAT,
@@ -196,17 +197,17 @@ def create_tables(db_handler):
         timestamp {timestamp_type},
         traffic_intensity FLOAT
     )
-    """
+"""
     safe_execute(db_handler, weights_sql, "cache_metrics")
 
     # Best models table
     best_models_sql = f"""
-    CREATE TABLE IF NOT EXISTS best_models (
+    CREATE TABLE IF NOT EXISTS rl_model (
         id INTEGER PRIMARY KEY {auto_increment},
         model_name VARCHAR(255) NOT NULL,
         created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
         model_base64 LONGTEXT NOT NULL,
-        description TEXT
+        description TINTEXT,
     )
     """
     safe_execute(db_handler, best_models_sql, "best_models")

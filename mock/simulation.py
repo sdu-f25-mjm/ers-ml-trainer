@@ -2,6 +2,7 @@
 import logging
 import random
 import time
+import uuid  # Add this import
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -55,18 +56,19 @@ def simulate_cache_metrics(db_handler, update_interval=5, run_duration=None, sto
                     size_bytes = random.randint(10_000_000, 500_000_000)
                     timestamp = datetime.now() - timedelta(minutes=random.randint(1, 10080))
                     traffic_intensity = round(random.uniform(0.1, 2.0), 3)
+                    cache_key = f"{cache_name}_{uuid.uuid4()}"  # Generate a unique cache key
 
                     query = f"""
                     INSERT INTO cache_metrics (
-                        cache_name, hit_ratio, item_count, load_time_ms, policy_triggered,
+                        cache_name, cache_key, hit_ratio, item_count, load_time_ms, policy_triggered,
                         rl_action_taken, size_bytes, timestamp, traffic_intensity
                     ) VALUES (
                         {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                        {placeholder}, {placeholder}, {placeholder}, {placeholder}
+                        {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}
                     )
                     """
                     db_handler.execute_query(query, (
-                        cache_name, hit_ratio, item_count, load_time_ms, policy_triggered,
+                        cache_name, cache_key, hit_ratio, item_count, load_time_ms, policy_triggered,
                         rl_action_taken, size_bytes, timestamp, traffic_intensity
                     ))
 
@@ -242,3 +244,4 @@ def calculate_priority(weights, recency, frequency, time_relevance,
             weights['volatility'] * volatility +
             weights['complexity'] * complexity
     )
+
