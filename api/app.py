@@ -1,3 +1,4 @@
+# api/app.py
 import logging
 import os
 import re
@@ -35,7 +36,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global dictionaries to hold simulation & training job state
+# Global dictionaries to hold simulation & training model state
 app = FastAPI(
     title="Cache RL Optimization API",
     description="API for training and deploying RL models for database cache optimization",
@@ -93,7 +94,7 @@ def feature_columns_enum(
     return {"feature_columns_enum": [e.value for e in FeatureColumnsEnum]}
 
 
-@app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new training job")
+@app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new training model")
 async def start_training(
         background_tasks: BackgroundTasks,
         db_type: str = Query(
@@ -172,7 +173,7 @@ async def start_training(
 
 ):
     model_id = str(uuid4())
-    logger.info(f"Starting training job {model_id}")
+    logger.info(f"Starting training model {model_id}")
     start_time = datetime.now().isoformat()
     db_url = build_custom_db_url(db_type, host, port, database, user, password)
     logger.info(f"Database URL: {db_url}")
@@ -185,7 +186,7 @@ async def start_training(
         "model_path": None,
         "metrics": None
     }
-    logger.info("Training job added to queue")
+    logger.info("Training model added to queue")
 
     cache_keys = [f.value for f in cache_weights] if cache_weights else None
 
@@ -226,7 +227,7 @@ async def start_training(
     }
 
 
-@app.get("/models/{model_id}", response_model=modelStatus, tags=["models"], description="Get the status of a training job")
+@app.get("/models/{model_id}", response_model=modelStatus, tags=["models"], description="Get the status of a training model")
 async def get_model(model_id: str):
     return get_job_status(model_id)
 
@@ -237,18 +238,18 @@ async def list_jobs():
 
 
 @app.post("/evaluate/{model_id}", response_model=Dict[str, Any], tags=["evaluation"],
-          description="Evaluate a trained model from a completed job")
+          description="Evaluate a trained model from a completed model")
 async def evaluate_job_model(model_id: str, steps: int = 1000, use_gpu: bool = False):
-    job = get_job_status(model_id)
-    if job["status"] != "completed":
+    model = get_job_status(model_id)
+    if model["status"] != "completed":
         raise HTTPException(status_code=400, detail=f"Job {model_id} is not completed")
-    if not job["model_path"]:
-        raise HTTPException(status_code=400, detail=f"No model path found for job {model_id}")
+    if not model["model_path"]:
+        raise HTTPException(status_code=400, detail=f"No model path found for model {model_id}")
 
     # Dynamically import the correct evaluation function based on use_gpu and availability.
 
     results = evaluate_cache_model(
-        model_path=job["model_path"],
+        model_path=model["model_path"],
         eval_steps=steps,
         db_url=DB_URL,
         use_gpu=use_gpu
@@ -266,33 +267,37 @@ async def evaluate_job_model(model_id: str, steps: int = 1000, use_gpu: bool = F
 
 @app.post("/export/{model_id}", response_model=Dict[str, Any], tags=["deployment"])
 async def export_job_model(model_id: str, output_dir: str = "best_model"):
-    job = get_job_status(model_id)
-    if job["status"] != "completed":
+    model = get_job_status(model_id)
+    if model["status"] != "completed":
         raise HTTPException(status_code=400, detail=f"Job {model_id} is not completed")
-    if not job["model_path"]:
-        raise HTTPException(status_code=400, detail=f"No model path found for job {model_id}")
+    if not model["model_path"]:
+        raise HTTPException(status_code=400, detail=f"No model path found for model {model_id}")
     try:
         # Save model as base64 in the database
         db_url = build_db_url()
         engine = get_database_connection(db_url)
-        model_path = job["model_path"]
-        with open(model_path, "rb") as f:
-            model_bytes = f.read()
-        model_base64 = base64.b64encode(model_bytes).decode("utf-8")
-        description = None
-        meta_path = model_path + ".meta.json"
-        if os.path.exists(meta_path):
-            with open(meta_path, "r") as meta_f:
-                description = meta_f.read()
-        save_best_model_base64(engine, os.path.basename(model_path), model_base64, description)
 
+        model_path = model["model_path"]
+        logger.info(f"Exporting model: {model_path}")
         output_path = export_model_to_torchscript(
-            model_path=job["model_path"],
+            model_path=model["model_path"],
             output_dir=output_dir
         )
+        logger.info(f"Exported model to: {output_path}")
+
+        with open(output_path, "rb") as f:
+            model_bytes = f.read()
+        model_base64 = base64.b64encode(model_bytes).decode("utf-8")
+
+        description = model
+        # Correct way to get algorithm from the nested metrics dict
+        model_type = model.get("metrics", {}).get("algorithm")
+
+
+        save_best_model_base64(engine, os.path.basename(output_path), model_base64, description, model_type)
         return {
             "model_id": model_id,
-            "original_model": job["model_path"],
+            "original_model": model["model_path"],
             "exported_model": output_path,
             "output_directory": output_dir,
             "status": "success",
@@ -313,25 +318,52 @@ async def seed_database(
         hours: int = Query(1000, description="Hours of data to generate"),
         data_types: Optional[List[TableEnum]] = Query(None, description="Data types: " + ", ".join(
             [e.name for e in TableEnum])),
+        use_simulate_live: bool = Query(
+            False,
+            description="If true, use the new simulate_live.simulate_visits for cache_metrics data"
+        ),
+        n: int = Query(10000, description="Number of simulated visits for simulate_live (only used if use_simulate_live=True)")
 ):
     """Seed the database with mock energy data"""
     try:
         # Generate database with the specified database type
-        success = generate_mock_database(
-            host=host,
-            user=user,
-            password=password,
-            database=database,
-            port=port,
-            hours=hours,
-            db_type=db_type,
-            data_types=data_types
-        )
-
-        if success:
-            return {"status": "success", "message": f"Database seeded with {hours} hours of data"}
+        if use_simulate_live:
+            # Use simulate_visits directly for cache_metrics
+            from mock.mock_db import get_db_handler
+            db_handler = get_db_handler(db_type)
+            if db_type == 'sqlite':
+                if not db_handler.connect('', 0, '', '', database):
+                    raise HTTPException(status_code=500, detail="Failed to connect to SQLite database")
+            else:
+                if not db_handler.connect(host, port, user, password, database):
+                    raise HTTPException(status_code=500, detail=f"Failed to connect to {db_type} database")
+            from database.create_tables import create_tables
+            create_tables(db_handler)
+            from mock.simulate_live import simulate_visits
+            simulate_visits(
+                n=n,
+                db_handler=db_handler,
+                run_duration=10  # or adjust as needed
+            )
+            db_handler.commit()
+            db_handler.close()
+            return {"status": "success", "message": f"Database seeded with {n} simulated visits using simulate_live"}
         else:
-            raise HTTPException(status_code=500, detail="Failed to seed database")
+            success = generate_mock_database(
+                host=host,
+                user=user,
+                password=password,
+                database=database,
+                port=port,
+                hours=hours,
+                db_type=db_type,
+                data_types=data_types
+            )
+
+            if success:
+                return {"status": "success", "message": f"Database seeded with {hours} hours of data"}
+            else:
+                raise HTTPException(status_code=500, detail="Failed to seed database")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error seeding database: {str(e)}")
 
@@ -579,5 +611,4 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
-
 

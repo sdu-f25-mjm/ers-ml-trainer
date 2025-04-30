@@ -271,22 +271,46 @@ def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backof
             return None
 
 
-def save_best_model_base64(engine, model_name: str, model_base64: str, description: str = None):
+def save_best_model_base64(engine, model: str, base64: str, description: str = None, type: str = None):
     """
-    Insert a base64‐encoded model into the best_models table.
+    Insert a base64‐encoded model into the rl_models table.
     """
+    import json
+    import logging
+    from sqlalchemy import text
+
     logger = logging.getLogger(__name__)
+    logger.info(f"Saving best model '{model}' to rl_models table.")
+    logger.info(f"Model type: {type}")
+    logger.info(f"Model description: {description}")
+    logger.info(f"Model base64 length: {len(base64)}")
+
+    # Ensure description is a string (JSON if dict)
+    if isinstance(description, dict):
+        description = json.dumps(description)
+    if isinstance(type, dict):
+        type = json.dumps(type)
+
     stmt = text("""
         INSERT INTO rl_models
-          (model_name, model_base64, description, created_at)
+          (model_name, created_at, model_base64, description, model_type)
         VALUES
-          (:name, :data, :desc, NOW())
+          (:model, NOW(), :base64, :description, :type)
     """)
     with engine.connect() as conn:
         try:
-            conn.execute(stmt, {"name": model_name, "data": model_base64, "desc": description})
+            logger.info(f"Executing SQL statement: {stmt}")
+            conn.execute(
+                stmt,
+                {
+                    "model": model,
+                    "base64": base64,
+                    "description": description,
+                    "type": type,
+                }
+            )
             conn.commit()
-            logger.info(f"Saved best model '{model_name}' to rl_models table.")
+            logger.info(f"Saved best model '{model}' to rl_models table.")
         except Exception as e:
             logger.error(f"Failed to save best model to database: {e}")
             raise

@@ -207,7 +207,8 @@ def create_tables(db_handler):
         model_name VARCHAR(255) NOT NULL,
         created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
         model_base64 LONGTEXT NOT NULL,
-        description TEXT
+        description LONGTEXT,
+        model_type VARCHAR(255) NULL
     )
     """
     safe_execute(db_handler, rl_models_sql, "rl_models")

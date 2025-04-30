@@ -6,6 +6,7 @@ import random
 from datetime import datetime, timedelta
 
 from database.create_tables import create_tables
+from mock.simulate_live import simulate_visits
 from mock.simulation import simulate_cache_metrics
 
 # Set up logging
@@ -352,8 +353,11 @@ def generate_mock_database(
             generate_exchange_data(db_handler, hours, countries)
         if "cache_metrics" in data_types:
             logger.info("Generating derived data cache weights")
-            # simulate_cache_metrics will use simulate_live.simulate_visits, which now always uses full URL as cache_name
-            simulate_cache_metrics(db_handler, update_interval=5, run_duration=10, stop_event=None)
+            simulate_visits(
+                n=10000,  # or any desired number of visits
+                db_handler=db_handler,
+                run_duration=10  # or adjust as needed
+            )
 
         db_handler.commit()
         db_handler.close()

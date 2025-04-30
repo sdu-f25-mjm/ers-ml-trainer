@@ -128,12 +128,12 @@ def simulate_visits(
         params = generate_params(endpoint)
         visit_time = datetime.now()
 
-        # Construct the full URL with parameters (cache_name)
+        # Construct the full URL with parameters
         query_string = urllib.parse.urlencode(params)
         full_url = f"{endpoint}?{query_string}" if query_string else endpoint
-        cache_name = full_url  # Always use full URL as cache_name
 
-        # Use hash of the full URL as cache_key
+        # Use full URL as cache_name and its hash as cache_key
+        cache_name = full_url
         cache_key = url_hash(full_url)
 
         # Simulate metrics based on endpoint/params
