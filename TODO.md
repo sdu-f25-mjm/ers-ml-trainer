@@ -2,7 +2,7 @@
 
 ## Database & Schema
 
-- [x] Ensure all tables are created on startup, including `best_models` and `cache_metrics`.
+- [x] Ensure all tables are created on startup, including `rl_models` and `cache_metrics`.
     - [x] Review the startup sequence to ensure `create_tables` or equivalent is called before any DB operations.
         - [x] **Check the main entry point (e.g., `main.py`, `app.py`, or server startup script) to
           verify `create_tables` is invoked before any database access.**

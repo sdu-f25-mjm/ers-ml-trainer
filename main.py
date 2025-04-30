@@ -74,7 +74,7 @@ def create_app():
                                 existing_tables.add(row[0])
                             elif isinstance(row, dict):
                                 existing_tables.update(row.values())
-                    required_tables = {"best_models", "cache_metrics"}
+                    required_tables = {"rl_models", "cache_metrics"}
                     for table in required_tables:
                         if table in existing_tables:
                             logger.info(f"Table '{table}' exists in the database.")

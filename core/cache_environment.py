@@ -1,7 +1,7 @@
 # core/cache_environment.py
 import logging
 import os
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 import gymnasium as gym
 import numpy as np
@@ -43,7 +43,8 @@ class MariaDBCacheEnvironment(gym.Env):
             feature_columns: List[str] = None,
             target_column: str = None,
             max_queries: int = 500,
-            table_name: str = None  # Optional table name parameter
+            table_name: str = None,  # Optional table name parameter
+            cache_weights: Optional[List[str]] = None  # <-- add param
     ):
         """
         Initialize the MariaDB cache environment.
@@ -55,6 +56,7 @@ class MariaDBCacheEnvironment(gym.Env):
             target_column: Target column for optimization
             max_queries: Maximum number of queries to run
             table_name: Optional specific table to use (will auto-discover if None)
+            cache_weights: Optional list of columns to use for weighted reward calculation
         """
         super().__init__()
 
@@ -62,6 +64,7 @@ class MariaDBCacheEnvironment(gym.Env):
         self.cache_size = cache_size
         self.max_queries = max_queries
         self.db_url = db_url
+        self.cache_weights = cache_weights
 
         # Create database connection
         self.logger.info(f"Connecting to database: {self.db_url}")
@@ -185,8 +188,18 @@ class MariaDBCacheEnvironment(gym.Env):
             # Add to cache if not already in cache
             self._update_cache(current_query)
 
-        # Calculate reward
-        reward = 1.0 if cache_hit else -0.1
+        # --- Custom weighted reward ---
+        if self.cache_weights:
+            reward = 0.0
+            for col in self.cache_weights:
+                try:
+                    val = float(current_query[col])
+                except Exception:
+                    val = 0.0
+                reward += val
+            reward = reward if cache_hit else -0.1 * reward
+        else:
+            reward = 1.0 if cache_hit else -0.1
 
         # Move to next query
         self.current_query_idx = (self.current_query_idx + 1) % len(self.data)
@@ -285,7 +298,8 @@ def create_mariadb_cache_env(
         cache_size: int = 10,
         feature_columns: list[str] = None,
         max_queries: int = 500,
-        table_name: str = None
+        table_name: str = None,
+        cache_weights: Optional[List[str]] = None
 ) -> MariaDBCacheEnvironment:
     """Factory function to create a MariaDB cache environment instance."""
     return MariaDBCacheEnvironment(
@@ -293,5 +307,7 @@ def create_mariadb_cache_env(
         cache_size=cache_size,
         feature_columns=feature_columns,
         max_queries=max_queries,
-        table_name=table_name
+        table_name=table_name,
+        cache_weights=cache_weights
     )
+

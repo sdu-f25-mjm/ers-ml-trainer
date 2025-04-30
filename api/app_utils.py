@@ -23,28 +23,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 running_simulations = {}
-training_jobs = {}
+training_models = {}
 
 
 def load_trained_models():
     """
     Load all trained models at runtime and populate the training_jobs dictionary
     """
-    global training_jobs
+    global training_models
     logger.info("Loading trained models into memory...")
     models = list_available_models()
     for model in models:
         model_id = f"{model['algorithm']}_{model['cache_size']}_{model['timestamp']}"
-        training_jobs[model_id] = {
-            "job_id": model_id,
+        training_models[model_id] = {
+            "model_id": model_id,
             "status": "completed",
             "start_time": model['created_at'],
             "end_time": None,
             "model_path": model['path'],
             "metrics": model['metadata']
         }
-    logger.info(f"Loaded {len(training_jobs)} trained models")
-    return training_jobs
+    logger.info(f"Loaded {len(training_models)} trained models")
+    return training_models
 
 
 # Initialize the training_jobs dictionary with existing models
@@ -77,13 +77,13 @@ class CacheTableEnum(str, Enum):
 
 
 class TrainingResponse(BaseModel):
-    job_id: str
+    model_id: str
     status: str
     start_time: str
 
 
-class JobStatus(BaseModel):
-    job_id: str
+class modelStatus(BaseModel):
+    model_id: str
     status: str
     start_time: str
     end_time: Optional[str] = None
@@ -94,16 +94,16 @@ class JobStatus(BaseModel):
 from core.model_training import train_cache_model, evaluate_cache_model
 
 
-def get_job_status(job_id: str):
-    if job_id not in training_jobs:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-    return training_jobs[job_id]
+def get_job_status(model_id: str):
+    if model_id not in training_models:
+        raise HTTPException(status_code=404, detail=f"Job {model_id} not found")
+    return training_models[model_id]
 
 
 async def run_training_job(
-        job_id: str,
+        model_id: str,
         db_url: str,
-        algorithm: Optional[List],
+        algorithm: AlgorithmEnum,
         cache_size: int,
         max_queries: int,
         timesteps: int,
@@ -111,18 +111,19 @@ async def run_training_job(
         feature_columns: Optional[List],
         use_gpu: bool = True,
         batch_size: Optional[int] = None,
-        learning_rate: Optional[float] = None
+        learning_rate: Optional[float] = None,
+        cache_weights: Optional[List[str]] = None  # <-- add this param
 ):
     try:
-        logger.info(f"Running training job {job_id} with algorithm {algorithm}")
-        training_jobs[job_id]["status"] = "running"
+        logger.info(f"Running training job {model_id} with algorithm {algorithm}")
+        training_models[model_id]["status"] = "running"
 
         # If use_gpu is not requested or not available, force CPU training.
         logger.info(f"is_cuda_available: {is_cuda_available()}, use_gpu: {use_gpu}")
         if is_cuda_available() and use_gpu:
-            logger.info(f"Training job {job_id} with algorithm {algorithm} using GPU")
+            logger.info(f"Training job {model_id} with algorithm {algorithm} using GPU")
         else:
-            logger.info(f"Training job {job_id} with algorithm {algorithm} using CPU")
+            logger.info(f"Training job {model_id} with algorithm {algorithm} using CPU")
         model_path = train_cache_model(
             db_url=db_url,
             algorithm=algorithm,
@@ -134,6 +135,7 @@ async def run_training_job(
             batch_size=batch_size,
             learning_rate=learning_rate,
             use_gpu=use_gpu,
+            cache_weights=cache_weights  # <-- pass through
         )
         logger.info(f"Evaluating model at {model_path}")
         eval_results = evaluate_cache_model(
@@ -143,7 +145,7 @@ async def run_training_job(
             use_gpu=use_gpu
         )
 
-        logger.info(f"Training job {job_id} completed successfully. Model saved at {model_path}")
+        logger.info(f"Training job {model_id} completed successfully. Model saved at {model_path}")
         # Evaluate the trained model using the same module that was used for training.
 
         logger.info(f"Evaluation results: {eval_results}")
@@ -154,7 +156,7 @@ async def run_training_job(
         except Exception as e:
             eval_results["visualization_error"] = str(e)
 
-        training_jobs[job_id].update({
+        training_models[model_id].update({
             "status": "completed",
             "end_time": datetime.now().isoformat(),
             "model_path": model_path,
@@ -163,7 +165,7 @@ async def run_training_job(
 
     except Exception as e:
         import traceback
-        training_jobs[job_id].update({
+        training_models[model_id].update({
             "status": "failed",
             "end_time": datetime.now().isoformat(),
             "error": str(e),
@@ -172,7 +174,7 @@ async def run_training_job(
 
 
 def start_training_in_process(
-        job_id: str,
+        model_id: str,
         db_url: str,
         algorithm: AlgorithmEnum,
         cache_size: int,
@@ -188,10 +190,10 @@ def start_training_in_process(
     """
     Background task wrapper for running training.
     """
-    logger.info(f"Starting training for job {job_id}")
+    logger.info(f"Starting training for job {model_id}")
     # invoke training with feature_columns
     asyncio.run(run_training_job(
-        job_id=job_id,
+        model_id=model_id,
         db_url=db_url,
         algorithm=algorithm,
         cache_size=cache_size,
@@ -201,7 +203,8 @@ def start_training_in_process(
         feature_columns=feature_columns,  # pass through
         use_gpu=use_gpu,
         batch_size=batch_size,
-        learning_rate=learning_rate
+        learning_rate=learning_rate,
+        cache_weights=cache_keys  # <-- pass through
     ))
 
 
@@ -226,3 +229,4 @@ def get_dynamic_feature_columns_enum(db_url: str):
     feature_columns = [col for col in columns if col not in exclude]
     # Dynamically create the Enum
     return Enum('FeatureColumnsEnum', {col: col for col in feature_columns})
+

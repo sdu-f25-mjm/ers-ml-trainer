@@ -15,6 +15,7 @@ from stable_baselines3 import A2C, PPO, DQN
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
 
+from api.app_utils import AlgorithmEnum
 from database.database_connection import save_best_model_base64
 
 from core.cache_environment import create_mariadb_cache_env
@@ -244,7 +245,7 @@ def save_best_model(model, model_name, conn, description=None):
 
 def train_cache_model(
         db_url,
-        algorithm=None,
+        algorithm=AlgorithmEnum,
         cache_size=10,
         max_queries=500,
         table_name=None,
@@ -252,7 +253,8 @@ def train_cache_model(
         timesteps=100000,
         batch_size=None,
         learning_rate=None,
-        use_gpu=False
+        use_gpu=False,
+        cache_weights=None
 ):
 
     """
@@ -288,7 +290,8 @@ def train_cache_model(
         cache_size=cache_size,
         feature_columns=feature_columns,
         max_queries=max_queries,
-        table_name=table_name
+        table_name=table_name,
+        cache_weights=cache_weights  # <-- pass through
     )
 
     # Create evaluation environment
@@ -297,7 +300,8 @@ def train_cache_model(
         cache_size=cache_size,
         feature_columns=feature_columns,
         max_queries=max_queries,
-        table_name=table_name
+        table_name=table_name,
+        cache_weights=cache_weights  # <-- pass through
     )
     eval_env = Monitor(eval_env)
 
@@ -393,7 +397,7 @@ def train_cache_model(
         "learning_rate": params["learning_rate"],
         "training_time_seconds": training_time.total_seconds(),
         "timesteps": timesteps,
-        "feature_columns": feature_columns or ["usage_frequency", "recency", "complexity"],
+        "feature_columns": feature_columns,
         "trained_at": timestamp
     }
 
@@ -593,4 +597,5 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             return evaluate_cache_model(model_path, eval_steps, db_url, use_gpu=False, table_name=table_name)
 
         return {"error": str(e), "success": False}
+
 

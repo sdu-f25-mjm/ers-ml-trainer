@@ -201,7 +201,7 @@ def create_tables(db_handler):
     safe_execute(db_handler, weights_sql, "cache_metrics")
 
     # Best models table
-    best_models_sql = f"""
+    rl_models_sql = f"""
     CREATE TABLE IF NOT EXISTS rl_models (
         id INTEGER PRIMARY KEY {auto_increment},
         model_name VARCHAR(255) NOT NULL,
@@ -210,7 +210,7 @@ def create_tables(db_handler):
         description TEXT
     )
     """
-    safe_execute(db_handler, best_models_sql, "best_models")
+    safe_execute(db_handler, rl_models_sql, "rl_models")
 
     logger.info("All tables creation attempted (see errors above if any failed)")
     return True

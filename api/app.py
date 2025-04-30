@@ -5,19 +5,20 @@ import threading
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
+import base64
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 
 from api.app_utils import get_derived_cache_columns, get_dynamic_feature_columns_enum, TrainingResponse, AlgorithmEnum, \
     CacheTableEnum, \
-    start_training_in_process, JobStatus, get_job_status, training_jobs, running_simulations, \
+    start_training_in_process, modelStatus, get_job_status, training_models, running_simulations, \
     DatabaseTypeEnum
 from config import DB_DRIVER, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_URL
 from core.model_training import evaluate_cache_model, export_model_to_torchscript
 from core.utils import is_cuda_available, build_db_url, \
     build_custom_db_url
 from core.visualization import visualize_cache_performance
-from database.database_connection import get_database_connection
+from database.database_connection import get_database_connection, save_best_model_base64
 from database.tables_enum import TableEnum
 from mock.mock_db import generate_mock_database
 from mock.simulate_live import simulate_visits
@@ -170,14 +171,14 @@ async def start_training(
         )
 
 ):
-    job_id = str(uuid4())
-    logger.info(f"Starting training job {job_id}")
+    model_id = str(uuid4())
+    logger.info(f"Starting training job {model_id}")
     start_time = datetime.now().isoformat()
     db_url = build_custom_db_url(db_type, host, port, database, user, password)
     logger.info(f"Database URL: {db_url}")
 
-    training_jobs[job_id] = {
-        "job_id": job_id,
+    training_models[model_id] = {
+        "model_id": model_id,
         "status": "pending",
         "start_time": start_time,
         "end_time": None,
@@ -204,14 +205,14 @@ async def start_training(
 
     background_tasks.add_task(
         start_training_in_process,
-        job_id,
+        model_id,
         db_url,
         algorithm,
         cache_size,
         max_queries,
         timesteps,
         table_name,
-        cache_keys,
+        cache_keys,  # <-- pass cache_weights as cache_keys
         use_gpu,
         batch_size,
         learning_rate,
@@ -219,30 +220,30 @@ async def start_training(
     )
 
     return {
-        "job_id": job_id,
+        "model_id": model_id,
         "status": "pending",
         "start_time": start_time
     }
 
 
-@app.get("/jobs/{job_id}", response_model=JobStatus, tags=["jobs"], description="Get the status of a training job")
-async def get_job(job_id: str):
-    return get_job_status(job_id)
+@app.get("/models/{model_id}", response_model=modelStatus, tags=["models"], description="Get the status of a training job")
+async def get_model(model_id: str):
+    return get_job_status(model_id)
 
 
-@app.get("/jobs", response_model=List[JobStatus], tags=["jobs"], description="List all training jobs")
+@app.get("/models", response_model=List[modelStatus], tags=["models"], description="List all training models")
 async def list_jobs():
-    return list(training_jobs.values())
+    return list(training_models.values())
 
 
-@app.post("/evaluate/{job_id}", response_model=Dict[str, Any], tags=["evaluation"],
+@app.post("/evaluate/{model_id}", response_model=Dict[str, Any], tags=["evaluation"],
           description="Evaluate a trained model from a completed job")
-async def evaluate_job_model(job_id: str, steps: int = 1000, use_gpu: bool = False):
-    job = get_job_status(job_id)
+async def evaluate_job_model(model_id: str, steps: int = 1000, use_gpu: bool = False):
+    job = get_job_status(model_id)
     if job["status"] != "completed":
-        raise HTTPException(status_code=400, detail=f"Job {job_id} is not completed")
+        raise HTTPException(status_code=400, detail=f"Job {model_id} is not completed")
     if not job["model_path"]:
-        raise HTTPException(status_code=400, detail=f"No model path found for job {job_id}")
+        raise HTTPException(status_code=400, detail=f"No model path found for job {model_id}")
 
     # Dynamically import the correct evaluation function based on use_gpu and availability.
 
@@ -263,26 +264,39 @@ async def evaluate_job_model(job_id: str, steps: int = 1000, use_gpu: bool = Fal
     return results
 
 
-@app.post("/export/{job_id}", response_model=Dict[str, Any], tags=["deployment"])
-async def export_job_model(job_id: str, output_dir: str = "best_model"):
-    job = get_job_status(job_id)
+@app.post("/export/{model_id}", response_model=Dict[str, Any], tags=["deployment"])
+async def export_job_model(model_id: str, output_dir: str = "best_model"):
+    job = get_job_status(model_id)
     if job["status"] != "completed":
-        raise HTTPException(status_code=400, detail=f"Job {job_id} is not completed")
+        raise HTTPException(status_code=400, detail=f"Job {model_id} is not completed")
     if not job["model_path"]:
-        raise HTTPException(status_code=400, detail=f"No model path found for job {job_id}")
+        raise HTTPException(status_code=400, detail=f"No model path found for job {model_id}")
     try:
-        # For export, we will use the GPU version if available
+        # Save model as base64 in the database
+        db_url = build_db_url()
+        engine = get_database_connection(db_url)
+        model_path = job["model_path"]
+        with open(model_path, "rb") as f:
+            model_bytes = f.read()
+        model_base64 = base64.b64encode(model_bytes).decode("utf-8")
+        description = None
+        meta_path = model_path + ".meta.json"
+        if os.path.exists(meta_path):
+            with open(meta_path, "r") as meta_f:
+                description = meta_f.read()
+        save_best_model_base64(engine, os.path.basename(model_path), model_base64, description)
 
         output_path = export_model_to_torchscript(
             model_path=job["model_path"],
             output_dir=output_dir
         )
         return {
-            "job_id": job_id,
+            "model_id": model_id,
             "original_model": job["model_path"],
             "exported_model": output_path,
             "output_directory": output_dir,
-            "status": "success"
+            "status": "success",
+            "saved_to_db": True
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to export model: {str(e)}")
@@ -565,3 +579,5 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+
+

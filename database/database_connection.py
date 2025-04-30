@@ -277,7 +277,7 @@ def save_best_model_base64(engine, model_name: str, model_base64: str, descripti
     """
     logger = logging.getLogger(__name__)
     stmt = text("""
-        INSERT INTO best_models
+        INSERT INTO rl_models
           (model_name, model_base64, description, created_at)
         VALUES
           (:name, :data, :desc, NOW())
@@ -286,7 +286,7 @@ def save_best_model_base64(engine, model_name: str, model_base64: str, descripti
         try:
             conn.execute(stmt, {"name": model_name, "data": model_base64, "desc": description})
             conn.commit()
-            logger.info(f"Saved best model '{model_name}' to best_models table.")
+            logger.info(f"Saved best model '{model_name}' to rl_models table.")
         except Exception as e:
             logger.error(f"Failed to save best model to database: {e}")
             raise
