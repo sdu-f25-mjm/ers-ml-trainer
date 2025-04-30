@@ -1,5 +1,4 @@
 # mock/mock_db.py
-import json
 import logging
 import os
 import random
@@ -7,7 +6,6 @@ from datetime import datetime, timedelta
 
 from database.create_tables import create_tables
 from mock.simulate_live import simulate_visits
-from mock.simulation import simulate_cache_metrics
 
 # Set up logging
 logging.basicConfig(

@@ -1,9 +1,9 @@
 import hashlib
 import json
 import random
-from datetime import datetime, timedelta
 import time
 import urllib.parse
+from datetime import datetime, timedelta
 
 API_ENDPOINTS = [
     "/data",
@@ -22,11 +22,13 @@ EXCHANGE_COUNTRIES = ["GERMANY", "GREATBRITAIN", "NETHERLANDS", "NORWAY", "SWEDE
 AGGREGATION_TYPES = ["HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"]
 COMPARISON_TYPES = ["PRODUCTION", "CONSUMPTION", "EXCHANGE"]
 
+
 def random_iso_date(start, end):
     """Return random ISO8601 datetime string between two datetimes."""
     delta = end - start
     random_seconds = random.randint(0, int(delta.total_seconds()))
     return (start + timedelta(seconds=random_seconds)).isoformat()
+
 
 def generate_params(endpoint):
     now = datetime.utcnow()
@@ -97,22 +99,25 @@ def generate_params(endpoint):
     else:
         return {}
 
+
 def params_hash(params):
     """Create a short hash from parameters for grouping cache entries."""
     params_str = json.dumps(params, sort_keys=True)
     return hashlib.md5(params_str.encode()).hexdigest()[:8]
 
+
 def url_hash(url_string):
     """Create a hash from the full URL string."""
     return hashlib.md5(url_string.encode()).hexdigest()
 
+
 def simulate_visits(
-    n=10000,  # Increased default from 100 to 10000 (or any larger number)
-    sleep=0,
-    db_handler=None,
-    update_interval=5,
-    run_duration=None,
-    stop_event=None
+        n=10000,  # Increased default from 100 to 10000 (or any larger number)
+        sleep=0,
+        db_handler=None,
+        update_interval=5,
+        run_duration=None,
+        stop_event=None
 ):
     start_time = time.time()
     i = 0

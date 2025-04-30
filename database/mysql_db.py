@@ -1,6 +1,8 @@
 # database/mysql_db.py
 import logging
+
 import mysql.connector
+
 from database.base_db import DatabaseHandler
 
 logger = logging.getLogger(__name__)

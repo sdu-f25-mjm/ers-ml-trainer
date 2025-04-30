@@ -244,4 +244,3 @@ def calculate_priority(weights, recency, frequency, time_relevance,
             weights['volatility'] * volatility +
             weights['complexity'] * complexity
     )
-

@@ -11,5 +11,3 @@ class TableEnum(str, Enum):
     # comparison_analysis = "comparison_analysis"
     # consumption_forecast = "consumption_forecast"
     cache_metrics = "cache_metrics"
-
-

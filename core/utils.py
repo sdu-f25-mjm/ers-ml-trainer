@@ -1,8 +1,9 @@
 # core/utils.py
-import subprocess
-import psutil
 import logging
 import os
+import subprocess
+
+import psutil
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,6 +14,7 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
 
 def configure_gpu_environment():
     """
@@ -29,6 +31,7 @@ def configure_gpu_environment():
     # Optionally, set environment variables or torch settings here.
     os.environ["DEVICE"] = device
     return device
+
 
 def is_cuda_available():
     """Check if CUDA is available without importing torch if possible"""
@@ -128,6 +131,7 @@ def print_system_info():
             if "temperature_c" in gpu:
                 logger.info(f"  Temperature: {gpu['temperature_c']}°C")
 
+
 def build_db_url():
     """
     Build the database URL from environment variables.
@@ -140,6 +144,7 @@ def build_db_url():
     user = os.getenv("DB_USER", "cacheuser")
     password = os.getenv("DB_PASSWORD", "cachepass")
     return f"{driver}://{user}:{password}@{host}:{port}/{dbname}"
+
 
 def build_custom_db_url(driver, host, port, dbname, user, password):
     """

@@ -1,7 +1,9 @@
 # database/postgres_db.py
 import logging
+
 import psycopg2
 from psycopg2.extras import DictCursor
+
 from database.base_db import DatabaseHandler
 
 logger = logging.getLogger(__name__)

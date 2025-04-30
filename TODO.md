@@ -47,7 +47,8 @@
     - [x] Provide clearer error messages and suggestions for resolving persistent mismatches.
     - [x] Log the values of feature_columns and cache_size used in both training and evaluation for debugging.
     - [x] Enhance logic to handle cases where auto-adjusted shape still mismatches expected shape.
-    - [ ] Add user-facing documentation or API guidance: **If you see an observation shape mismatch, ensure you use the same `feature_columns` and `cache_size` for both training and evaluation.*
+    - [ ] Add user-facing documentation or API guidance: **If you see an observation shape mismatch, ensure you use the
+      same `feature_columns` and `cache_size` for both training and evaluation.*
     - [ ] Expose an API endpoint to fetch `feature_columns` and `cache_size` from model metadata for user convenience.
 - [ ] Standardize evaluation output format.
     - [x] Include a `success: true` flag on successful runs.
@@ -86,10 +87,5 @@
 - [ ] Add unit and integration tests for all modules.
 - [ ] Improve logging and error reporting.
 - [ ] Add documentation for setup, usage, and contributing.
-
-
-
-
-
 
 `

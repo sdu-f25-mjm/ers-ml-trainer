@@ -271,9 +271,10 @@ def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backof
             return None
 
 
-def save_best_model_base64(engine, model: str, base64: str, description: str = None, type: str = None):
+def save_best_model_base64(engine, model: str, base64: str, description: str = None, type: str = None,
+                           input_dimension: int = None):
     """
-    Insert a base64‐encoded model into the rl_models table.
+    Insert a base64‐encoded model into the rl_models table, including input_dimension.
     """
     import json
     import logging
@@ -284,6 +285,7 @@ def save_best_model_base64(engine, model: str, base64: str, description: str = N
     logger.info(f"Model type: {type}")
     logger.info(f"Model description: {description}")
     logger.info(f"Model base64 length: {len(base64)}")
+    logger.info(f"Input dimension: {input_dimension}")
 
     # Ensure description is a string (JSON if dict)
     if isinstance(description, dict):
@@ -292,11 +294,10 @@ def save_best_model_base64(engine, model: str, base64: str, description: str = N
         type = json.dumps(type)
 
     stmt = text("""
-        INSERT INTO rl_models
-          (model_name, created_at, model_base64, description, model_type)
-        VALUES
-          (:model, NOW(), :base64, :description, :type)
-    """)
+                INSERT INTO rl_models
+                (model_name, created_at, model_base64, description, model_type, input_dimension)
+                VALUES (:model, NOW(), :base64, :description, :type, :input_dimension)
+                """)
     with engine.connect() as conn:
         try:
             logger.info(f"Executing SQL statement: {stmt}")
@@ -307,6 +308,7 @@ def save_best_model_base64(engine, model: str, base64: str, description: str = N
                     "base64": base64,
                     "description": description,
                     "type": type,
+                    "input_dimension": input_dimension,
                 }
             )
             conn.commit()

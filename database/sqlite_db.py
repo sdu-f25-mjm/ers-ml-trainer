@@ -1,7 +1,8 @@
 # database/sqlite_db.py
 import logging
-import sqlite3
 import os
+import sqlite3
+
 from database.base_db import DatabaseHandler
 
 logger = logging.getLogger(__name__)

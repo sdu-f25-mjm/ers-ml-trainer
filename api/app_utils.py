@@ -229,4 +229,3 @@ def get_dynamic_feature_columns_enum(db_url: str):
     feature_columns = [col for col in columns if col not in exclude]
     # Dynamically create the Enum
     return Enum('FeatureColumnsEnum', {col: col for col in feature_columns})
-

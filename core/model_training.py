@@ -1,25 +1,21 @@
 # core/model_training_utils.py
 
+import base64
 import json
 import logging
 import os
-import re
 from datetime import datetime
-from typing import Dict, Any, Optional, List, Union, Tuple
-import base64
 
 import numpy as np
-import pandas as pd
 import torch
 from stable_baselines3 import A2C, PPO, DQN
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
 
 from api.app_utils import AlgorithmEnum
-from database.database_connection import save_best_model_base64
-
 from core.cache_environment import create_mariadb_cache_env
 from core.utils import is_cuda_available
+from database.database_connection import save_best_model_base64
 
 logging.basicConfig(
     level=logging.INFO,
@@ -231,6 +227,7 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
         logger.error(f"Failed to export model: {e}")
         raise
 
+
 def save_best_model(model, model_name, conn, description=None):
     """
     Serialize and save the best model in base64 to the database.
@@ -242,6 +239,7 @@ def save_best_model(model, model_name, conn, description=None):
     model_bytes = buffer.read()
     model_base64 = base64.b64encode(model_bytes).decode('utf-8')
     save_best_model_base64(conn, model_name, model_base64, description)
+
 
 def train_cache_model(
         db_url,
@@ -256,7 +254,6 @@ def train_cache_model(
         use_gpu=False,
         cache_weights=None
 ):
-
     """
     Train a cache model using either CPU or GPU based on availability and preferences.
     """
@@ -506,7 +503,7 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
         rewards = []
         inference_times = []
         step_reasoning = []  # New: reasoning per step
-        in_cache = []        # New: is item in cache after action
+        in_cache = []  # New: is item in cache after action
 
         eval_start = datetime.now()
 
@@ -586,7 +583,7 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             'evaluation_time_seconds': eval_time,
             'device_used': device,
             'step_reasoning': step_reasoning,  # New
-            'in_cache': in_cache               # New
+            'in_cache': in_cache  # New
         }
     except Exception as e:
         logger.error(f"Model evaluation failed: {e}")
@@ -597,5 +594,3 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             return evaluate_cache_model(model_path, eval_steps, db_url, use_gpu=False, table_name=table_name)
 
         return {"error": str(e), "success": False}
-
-

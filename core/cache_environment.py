@@ -1,6 +1,5 @@
 # core/cache_environment.py
 import logging
-import os
 from typing import List, Dict, Tuple, Optional
 
 import gymnasium as gym
@@ -15,6 +14,7 @@ from database.database_connection import (
     load_data_from_database,
     get_table_schema
 )
+
 db_url = build_db_url()  # or fallback if db_url is None
 engine = create_database_connection(db_url)
 
@@ -24,7 +24,9 @@ from core.utils import list_available_models
 models = list_available_models()
 print(f"Found {len(models)} models:")
 for model in models:
-    print(f"- {model['algorithm'].upper()} (cache size: {model['cache_size']}) trained on {model['device'].upper()} at {model['created_at']}")
+    print(
+        f"- {model['algorithm'].upper()} (cache size: {model['cache_size']}) trained on {model['device'].upper()} at {model['created_at']}")
+
 
 class MariaDBCacheEnvironment(gym.Env):
     """
@@ -310,4 +312,3 @@ def create_mariadb_cache_env(
         table_name=table_name,
         cache_weights=cache_weights
     )
-

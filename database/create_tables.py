@@ -203,12 +203,13 @@ def create_tables(db_handler):
     # Best models table
     rl_models_sql = f"""
     CREATE TABLE IF NOT EXISTS rl_models (
-        id INTEGER PRIMARY KEY {auto_increment},
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
         model_name VARCHAR(255) NOT NULL,
-        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         model_base64 LONGTEXT NOT NULL,
-        description LONGTEXT,
-        model_type VARCHAR(255) NULL
+        description TEXT,
+        model_type VARCHAR(255) NULL,
+        input_dimension INT NULL
     )
     """
     safe_execute(db_handler, rl_models_sql, "rl_models")

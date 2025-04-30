@@ -60,7 +60,6 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
 
     # Add a table with reasoning and in_cache for first 10 steps (if available)
     if step_reasoning and in_cache:
-        from matplotlib.table import Table
         ax_table = fig.add_axes([0.1, -0.25, 0.8, 0.18])  # [left, bottom, width, height]
         ax_table.axis('off')
         n_rows = min(10, len(step_reasoning))
@@ -109,4 +108,3 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
 
     logger.info(f"Cache visualization saved to {filepath}")
     return filepath
-

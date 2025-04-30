@@ -1,4 +1,6 @@
 # api/app.py
+import base64
+import json
 import logging
 import os
 import re
@@ -6,7 +8,6 @@ import threading
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
-import base64
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 
@@ -23,7 +24,6 @@ from database.database_connection import get_database_connection, save_best_mode
 from database.tables_enum import TableEnum
 from mock.mock_db import generate_mock_database
 from mock.simulate_live import simulate_visits
-from mock.simulation import simulate_cache_metrics
 
 # Set up logging
 logging.basicConfig(
@@ -44,6 +44,7 @@ app = FastAPI(
     docs_url="/"
 )
 running_simulations = {}
+
 
 @app.on_event("startup")
 async def startup_db_client():
@@ -227,7 +228,8 @@ async def start_training(
     }
 
 
-@app.get("/models/{model_id}", response_model=modelStatus, tags=["models"], description="Get the status of a training model")
+@app.get("/models/{model_id}", response_model=modelStatus, tags=["models"],
+         description="Get the status of a training model")
 async def get_model(model_id: str):
     return get_job_status(model_id)
 
@@ -273,7 +275,6 @@ async def export_job_model(model_id: str, output_dir: str = "best_model"):
     if not model["model_path"]:
         raise HTTPException(status_code=400, detail=f"No model path found for model {model_id}")
     try:
-        # Save model as base64 in the database
         db_url = build_db_url()
         engine = get_database_connection(db_url)
 
@@ -285,23 +286,39 @@ async def export_job_model(model_id: str, output_dir: str = "best_model"):
         )
         logger.info(f"Exported model to: {output_path}")
 
+        # Read input dimension from metadata.json if available
+        meta_path = os.path.join(output_dir, "metadata.json")
+        input_dimension = None
+        if os.path.exists(meta_path):
+            with open(meta_path, "r") as f:
+                meta = json.load(f)
+                obs_shape = meta.get("observation_space_shape")
+                if obs_shape and isinstance(obs_shape, list) and len(obs_shape) > 0:
+                    input_dimension = obs_shape[0]
+
         with open(output_path, "rb") as f:
             model_bytes = f.read()
         model_base64 = base64.b64encode(model_bytes).decode("utf-8")
 
         description = model
-        # Correct way to get algorithm from the nested metrics dict
         model_type = model.get("metrics", {}).get("algorithm")
 
-
-        save_best_model_base64(engine, os.path.basename(output_path), model_base64, description, model_type)
+        save_best_model_base64(
+            engine,
+            os.path.basename(output_path),
+            model_base64,
+            description,
+            model_type,
+            input_dimension
+        )
         return {
             "model_id": model_id,
             "original_model": model["model_path"],
             "exported_model": output_path,
             "output_directory": output_dir,
             "status": "success",
-            "saved_to_db": True
+            "saved_to_db": True,
+            "input_dimension": input_dimension
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to export model: {str(e)}")
@@ -322,7 +339,8 @@ async def seed_database(
             False,
             description="If true, use the new simulate_live.simulate_visits for cache_metrics data"
         ),
-        n: int = Query(10000, description="Number of simulated visits for simulate_live (only used if use_simulate_live=True)")
+        n: int = Query(10000,
+                       description="Number of simulated visits for simulate_live (only used if use_simulate_live=True)")
 ):
     """Seed the database with mock energy data"""
     try:
@@ -611,4 +629,3 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
-
