@@ -11,6 +11,10 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
 from core.utils import build_db_url
 
+import dotenv
+
+dotenv.load_dotenv()
+
 build_db_url()
 
 

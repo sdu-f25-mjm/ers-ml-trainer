@@ -143,7 +143,9 @@ def build_db_url():
     dbname = os.getenv("DB_NAME", "cache_db")
     user = os.getenv("DB_USER", "cacheuser")
     password = os.getenv("DB_PASSWORD", "cachepass")
-    return f"{driver}://{user}:{password}@{host}:{port}/{dbname}"
+    url = f"{driver}://{user}:{password}@{host}:{port}/{dbname}"
+    logger.info(f"Using database URL: {url}")
+    return url
 
 
 def build_custom_db_url(driver, host, port, dbname, user, password):

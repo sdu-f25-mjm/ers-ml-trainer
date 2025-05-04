@@ -186,8 +186,8 @@ def create_tables(db_handler):
     weights_sql = f"""
     CREATE TABLE IF NOT EXISTS cache_metrics (
         id INTEGER PRIMARY KEY {auto_increment},
-        cache_name VARCHAR(50) NOT NULL,
-        cache_key VARCHAR(255) not null,
+        cache_name LONGTEXT NOT NULL,
+        cache_key VARCHAR(255) NOT null,
         hit_ratio FLOAT,
         item_count INT,
         load_time_ms FLOAT,
@@ -207,7 +207,7 @@ def create_tables(db_handler):
         model_name VARCHAR(255) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         model_base64 LONGTEXT NOT NULL,
-        description TEXT,
+        description LONGTEXT,
         model_type VARCHAR(255) NULL,
         input_dimension INT NULL
     )

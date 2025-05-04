@@ -94,7 +94,7 @@ class modelStatus(BaseModel):
 from core.model_training import train_cache_model, evaluate_cache_model
 
 
-def get_job_status(model_id: str):
+def get_status(model_id: str):
     if model_id not in training_models:
         raise HTTPException(status_code=404, detail=f"Job {model_id} not found")
     return training_models[model_id]

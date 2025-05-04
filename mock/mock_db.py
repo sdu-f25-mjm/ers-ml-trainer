@@ -274,15 +274,13 @@ def generate_mock_database(
         port=DB_PORT,
         hours=1000,
         db_type=DB_DRIVER,
-        data_types=None  # New parameter for selecting specific mock data
+        data_types=None
 ):
     """
     Generate a mock database with sample data.
 
-    If data_types is provided, only the specified mock data will be created.
-    Available types: TableEnum.ENERGY, TableEnum.PRODUCTION, TableEnum.CONSUMPTION,
-    TableEnum.EXCHANGE, TableEnum.CARBON_INTENSITY, TableEnum.AGGREGATED_PRODUCTION,
-    TableEnum.COMPARISON_ANALYSIS, TableEnum.CONSUMPTION_FORECAST, TableEnum.CACHE_WEIGHTS
+    For cache_metrics, cache_name is now a normalized endpoint template (no date/time params)
+    to improve RL model generalization and cache efficiency.
     """
     logger.info(data_types)
     # Convert enums to their value strings if needed.
@@ -350,7 +348,7 @@ def generate_mock_database(
             logger.info("Generating mock exchange data")
             generate_exchange_data(db_handler, hours, countries)
         if "cache_metrics" in data_types:
-            logger.info("Generating derived data cache weights")
+            logger.info("Generating derived data cache weights (normalized endpoint names)")
             simulate_visits(
                 n=10000,  # or any desired number of visits
                 db_handler=db_handler,

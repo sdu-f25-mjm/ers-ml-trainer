@@ -5,223 +5,146 @@ info:
     Settlement datasæt.
   title: Energi Data API
   version: "1.0.0"
+servers:
+  - url: http://api:8282
+    description: Local server
+
 paths:
-  /data:
-    get:
-      operationId: getData
-      summary: Hent al data med filtrering og dato-interval
-      tags:
-        - Data
-      parameters:
-        - $ref: '#/components/parameters/from'
-        - $ref: '#/components/parameters/to'
-        - $ref: '#/components/parameters/priceArea'
-      responses:
-        "200":
-          description: Fuld dataset inden for dato-interval
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/DataRow'
-        "400":
-          description: Bad request - invalid date format or parameters
-        "404":
-          description: No data found for the specified criteria
-        "500":
-          description: Internal server error
-      x-accepts:
-        - application/json
   /production:
     get:
+      summary: Hen rå produktions data
       operationId: getProduction
-      summary: Hent produktionsdata
       tags:
-        - Production
+        - Raw
       parameters:
         - $ref: '#/components/parameters/from'
         - $ref: '#/components/parameters/to'
         - $ref: '#/components/parameters/priceArea'
         - $ref: '#/components/parameters/productionType'
       responses:
-        "200":
+        200:
           description: Produktionsdata
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProductionResponses'
+                $ref: '#/components/schemas/Productions'
         "400":
           description: Bad request - invalid date format or parameters
         "404":
           description: No data found for the specified criteria
       x-accepts:
         - application/json
+
+  /production/total:
+    get:
+      summary: Hent produktionsdata
+      operationId: getProductionTotal
+      tags:
+        - Derived
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+      responses:
+        '200':
+          description: Produktionsdata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductionResponse'
+
   /consumption:
     get:
+      summary: Hent rå forbrugsdata
       operationId: getConsumption
-      summary: Hent forbrugsdata
       tags:
-        - Consumption
+        - Raw
       parameters:
         - $ref: '#/components/parameters/from'
         - $ref: '#/components/parameters/to'
         - $ref: '#/components/parameters/priceArea'
       responses:
-        "200":
+        200:
+          description: Rå forbrugsdata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consumptions'
+        "400":
+          description: Bad request - invalid date format or parameters
+        "404":
+          description: No data found for the specified criteria
+      x-accepts:
+        - application/json
+
+  /consumption/total:
+    get:
+      summary: Hent forbrugsdata
+      operationId: getConsumptionTotal
+      tags:
+        - Derived
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/priceArea'
+      responses:
+        '200':
           description: Forbrugsdata
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ConsumptionsResponses'
+                $ref: '#/components/schemas/ConsumptionTotal'
         "400":
           description: Bad request - invalid date format or parameters
         "404":
           description: No data found for the specified criteria
-      x-accepts:
-        - application/json
+
   /exchange:
     get:
+      summary: Hent rå udvekslingsdata med andre lande
       operationId: getExchange
+      tags:
+        - Raw
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/priceArea'
+      responses:
+        200:
+          description: Rå udvekslingsdata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExchangeEntries'
+        "400":
+          description: Bad request - invalid date format or parameters
+        "404":
+          description: No data found for the specified criteria
+      x-accepts:
+        - application/json
+  /exchange/country:
+    get:
       summary: Hent udvekslingsdata med andre lande
+      operationId: getExchangeCountry
       tags:
-        - Exchange
+        - Derived
       parameters:
         - $ref: '#/components/parameters/from'
         - $ref: '#/components/parameters/to'
-        - $ref: '#/components/parameters/exchangeCountry'
       responses:
-        "200":
-          description: Udvekslingsdata
+        200:
+          description: Rå forbrugsdata
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ExchangeData'
-        "400":
-          description: Bad request - invalid date format or parameters
-        "404":
-          description: No data found for the specified criteria
-      x-accepts:
-        - application/json
-
-  # New endpoints
-  /aggregated-production:
-    get:
-      operationId: getAggregatedProduction
-      summary: Hent aggregerede produktionsdata efter dag/uge/måned
-      tags:
-        - Aggregated
-      parameters:
-        - $ref: '#/components/parameters/from'
-        - $ref: '#/components/parameters/to'
-        - $ref: '#/components/parameters/priceArea'
-        - $ref: '#/components/parameters/aggregationType'
-        - $ref: '#/components/parameters/productionType'
-      responses:
-        "200":
-          description: Aggregeret produktionsdata
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/AggregatedProductionData'
+                $ref: '#/components/schemas/Exchange'
         "400":
           description: Bad request - invalid date format or parameters
         "404":
           description: No data found for the specified criteria
         "500":
           description: Internal server error
-      x-accepts:
-        - application/json
-
-  /comparison:
-    get:
-      operationId: getComparison
-      summary: Sammenlign data mellem forskellige tidsperioder
-      tags:
-        - Comparison
-      parameters:
-        - $ref: '#/components/parameters/from'
-        - $ref: '#/components/parameters/to'
-        - $ref: '#/components/parameters/compareFrom'
-        - $ref: '#/components/parameters/compareTo'
-        - $ref: '#/components/parameters/priceArea'
-        - $ref: '#/components/parameters/productionType'
-        - $ref: '#/components/parameters/comparisonType'
-        - $ref: '#/components/parameters/exchangeCountry'
-      responses:
-        "200":
-          description: Sammenligningsanalyse data
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ComparisonResponse'
-        "400":
-          description: Bad request - invalid date format or parameters
-        "404":
-          description: No data found for the specified criteria
-        "500":
-          description: Internal server error
-      x-accepts:
-        - application/json
-
-  /forecast:
-    get:
-      operationId: getForecast
-      summary: Få prognose for fremtidigt energiforbrug
-      tags:
-        - Forecast
-      parameters:
-        - $ref: '#/components/parameters/priceArea'
-        - $ref: '#/components/parameters/forecastHorizon'
-      responses:
-        "200":
-          description: Forbrugsprognose data
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ConsumptionForecastResponse'
-        "400":
-          description: Bad request - invalid date format or parameters
-        "404":
-          description: No data found for the specified criteria
-        "500":
-          description: Internal server error
-      x-accepts:
-        - application/json
-
-  /carbon-intensity:
-    get:
-      operationId: getCarbonIntensity
-      summary: Hent data om CO2-intensitet baseret på energiproduktionsmix
-      tags:
-        - Carbon Intensity
-      parameters:
-        - $ref: '#/components/parameters/from'
-        - $ref: '#/components/parameters/to'
-        - $ref: '#/components/parameters/priceArea'
-        - $ref: '#/components/parameters/productionType'
-        - $ref: '#/components/parameters/aggregationType'
-      responses:
-        "200":
-          description: CO2-intensitetsdata
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CarbonIntensityData'
-        "400":
-          description: Bad request - invalid date format or parameters
-        "404":
-          description: No data found for the specified criteria
-        "500":
-          description: Internal server error
-      x-accepts:
-        - application/json
+        x-accepts:
+          - application/json
 
   /model/upload:
     post:
@@ -318,22 +241,6 @@ paths:
                   $ref: '#/components/schemas/ModelMetadata'
         "401":
           description: Unauthorized
-  /load/{id}:
-    get:
-      summary: load a caching model in the system
-      operationId: loadCachingModel
-      tags:
-        - Model Management
-      parameters:
-        - $ref: '#/components/parameters/modelId'
-      responses:
-        "200":
-          description: Model loaded successfully
-        "404":
-          description: Model not found
-        "401":
-          description: Unauthorized
-
   /model/{id}:
     patch:
       summary: Update model metadata or description
@@ -361,6 +268,47 @@ paths:
         "401":
           description: Unauthorized
 
+  /load/specific/{id}:
+    get:
+      summary: load a specific caching model
+      operationId: loadCachingModel
+      tags:
+        - Model Management
+      parameters:
+        - $ref: '#/components/parameters/modelId'
+        - $ref: '#/components/parameters/modelType'
+      responses:
+        "200":
+          description: Model loaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelMetadata'
+        "404":
+          description: Model not found
+        "401":
+          description: Unauthorized
+  /load/strategy:
+    get:
+      summary: Get the current strategy
+      operationId: getModelStrategy
+      tags:
+        - Model Management
+      responses:
+        "200":
+          description: Model strategy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  strategy:
+                    type: string
+        "404":
+          description: Model not found
+        "401":
+          description: Unauthorized
+
 components:
   parameters:
     modelId:
@@ -371,6 +319,15 @@ components:
         type: integer
         example: 123
       description: The ID of the model to fetch or update
+
+    modelType:
+      name: modelType
+      in: query
+      required: false
+      schema:
+        type: string
+        example: DQN
+      description: The type of the model (e.g., DQN, A2C, PPO, LRU, LFU, TTL, NONE)
 
     asFile:
       name: asFile
@@ -383,23 +340,23 @@ components:
 
     from:
       name: from
-      description: ISO 8601 format (e.g., 2020-01-01T00:00:01Z)
+      description: ISO 8601 format (e.g., 2024-01-01T00:00)
       in: query
       required: true
       schema:
         type: string
         format: date-time
-        example: 2020-01-01T00:00:01Z
+        example: 2024-01-01T00:00
 
     to:
       name: to
-      description: ISO 8601 format (e.g., 2024-12-31T23:59:59Z)
+      description: ISO 8601 format (e.g., 2024-02-01T00:00)
       in: query
       required: true
       schema:
         type: string
         format: date-time
-        example: 2024-01-01T00:00:01Z
+        example: 2024-01-01T00:00
 
     priceArea:
       name: priceArea
@@ -409,9 +366,9 @@ components:
         Brug "--" for at hente data for alle prisområder.
       required: false
       style: form
-      explode: false
+      explode: true
       schema:
-        $ref: '#/components/schemas/PriceArea'
+        $ref: '#/components/schemas/PriceAreaEnum'
 
     productionType:
       name: type
@@ -419,82 +376,27 @@ components:
       description: Specify the type of the source of the energy
       required: false
       style: form
-      explode: false
+      explode: true
       schema:
-        $ref: '#/components/schemas/ProductionType'
+        $ref: '#/components/schemas/ProductionTypeEnum'
 
     exchangeCountry:
       name: country
       in: query
       description: Which country the exchange happens to
       required: false
-      style: form
-      explode: false
+      explode: true
       schema:
-        $ref: '#/components/schemas/ExchangeCountry'
-
-    aggregationType:
-      name: aggregationType
-      in: query
-      description: Type af aggregering for datapunkter
-      required: false
-      style: form
-      explode: false
-      schema:
-        $ref: '#/components/schemas/AggregationType'
-
-    compareFrom:
-      name: compareFrom
-      description: ISO 8601 format (e.g., 2015-01-01T00:00:01Z)
-      in: query
-      required: true
-      schema:
-        type: string
-        format: date-time
-        example: 2015-01-01T00:00:01Z
-
-    compareTo:
-      name: compareTo
-      description: ISO 8601 format (e.g., 2015-12-31T23:59:59Z)
-      in: query
-      required: true
-      schema:
-        type: string
-        format: date-time
-        example: 2016-01-01T00:00:01Z
-
-    comparisonType:
-      name: comparisonType
-      in: query
-      description: Type af sammenligning
-      required: false
-      style: form
-      explode: false
-      schema:
-        $ref: '#/components/schemas/ComparisonType'
-      example: production
-
-    forecastHorizon:
-      name: horizon
-      in: query
-      description: Antal dage/timer som prognosen skal dække
-      required: true
-      style: form
-      explode: false
-      schema:
-        type: integer
-        default: 24
-        minimum: 1
-        maximum: 720  # 30 days
+        $ref: '#/components/schemas/ExchangeCountryEnum'
 
   schemas:
-    PriceArea:
+    PriceAreaEnum:
       type: string
       enum:
         - DK1
         - DK2
 
-    ProductionType:
+    ProductionTypeEnum:
       type: string
       enum:
         - WIND
@@ -503,66 +405,17 @@ components:
         - COMMERCIAL_POWER
         - CENTRAL_POWER
 
-    ExchangeCountry:
+    ExchangeCountryEnum:
       type: string
+      default: germany
       enum:
-        - GERMANY
-        - GREATBRITAIN
-        - NETHERLANDS
-        - NORWAY
-        - SWEDEN
+        - germany
+        - greatbritain
+        - netherlands
+        - norway
+        - sweden
 
-    AggregationType:
-      type: string
-      default: daily
-      enum:
-        - HOURLY
-        - DAILY
-        - WEEKLY
-        - MONTHLY
-        - YEARLY
 
-    ComparisonType:
-      type: string
-      default: production
-      enum:
-        - PRODUCTION
-        - CONSUMPTION
-        - EXCHANGE
-    DataRow:
-      type: object
-      properties:
-        HourUTC:
-          type: string
-          format: date-time
-        PriceArea:
-          type: string
-        CentralPower_MWh:
-          type: number
-        LocalPower_MWh:
-          type: number
-        GrossConsumption_MWh:
-          type: number
-        ExchangeNO_MWh:
-          type: number
-        ExchangeSE_MWh:
-          type: number
-        ExchangeDE_MWh:
-          type: number
-        SolarPowerSelfConMWh:
-          type: number
-        GridLossTransmissionMWh:
-          type: number
-      example:
-        HourUTC: "2000-01-23T04:56:07.000+00:00"
-        CentralPower_MWh: 0.8008281904610115
-        PriceArea: "PriceArea"
-        ExchangeNO_MWh: 5.962133916683182
-        GrossConsumption_MWh: 1.4658129805029452
-        ExchangeSE_MWh: 5.637376656633329
-        ExchangeDE_MWh: 2.3021358869347655
-        SolarPowerSelfConMWh: 7.061401241503109
-        GridLossTransmissionMWh: 9.301444243932576
     ProductionMisc:
       type: object
       properties:
@@ -576,6 +429,7 @@ components:
           type: number
         HydroPower_MWh:
           type: number
+
     ProductionWind:
       type: object
       properties:
@@ -591,6 +445,7 @@ components:
           type: number
         OnshoreWindGe50kW_MWh:
           type: number
+
     ProductionSolar:
       type: object
       properties:
@@ -606,6 +461,7 @@ components:
           type: number
         SolarPowerGe40kW_MWh:
           type: number
+
     UsageConsumption:
       type: object
       properties:
@@ -653,6 +509,7 @@ components:
         ExchangeDE_MWh: 1.4658129805029452
         ExchangeGBB_MWh: 2.3021358869347655
         ExchangeNL_MWh: 5.962133916683182
+
     ExchangeData:
       type: object
       properties:
@@ -674,19 +531,8 @@ components:
         Import_MWh: 75.2
         NetExchange_MWh: 45.3
 
-    ProductionResponses:
-      type: array
-      items:
-        $ref: '#/components/schemas/ProductionResponse'
     ProductionResponse:
       allOf:
-        - type: object
-          properties:
-            Timestamp:
-              type: string
-              format: timestamp
-            PriceArea:
-              type: string
         - $ref: '#/components/schemas/ProductionWind'
         - $ref: '#/components/schemas/ProductionSolar'
         - $ref: '#/components/schemas/ProductionMisc'
@@ -709,10 +555,26 @@ components:
         WindTotal_MWh: 0.8008281904610115
         SolarPowerLt10kW_MWh: 2.027123023002322
 
-    ConsumptionsResponses:
-      type: array
-      items:
-        $ref: '#/components/schemas/ConsumptionResponse'
+
+    ConsumptionTotal:
+      type: object
+      properties:
+        totalConsumptionMWh:
+          type: number
+        fromDate:
+          type: string
+          format: date-time
+        toDate:
+          type: string
+          format: date-time
+        branche:
+          $ref: '#/components/schemas/BrancheData'
+        DK1:
+          $ref: '#/components/schemas/RegionalConsumption'
+        DK2:
+          $ref: '#/components/schemas/RegionalConsumption'
+
+
     ConsumptionResponse:
       allOf:
         - type: object
@@ -737,214 +599,41 @@ components:
         GridLossInterconnectors_MWh: 7.061401241503109
         GridLossDistribution_MWh: 2.3021358869347655
 
-    # New schemas for the new endpoints
-    AggregatedProductionData:
-      type: object
-      properties:
-        PeriodStart:
-          type: string
-          format: date-time
-          description: Start tidspunkt for perioden
-        PeriodEnd:
-          type: string
-          format: date-time
-          description: Slut tidspunkt for perioden
-        PriceArea:
-          type: string
-          description: Prisområde (DK1 eller DK2)
-        AggregationType:
-          type: string
-          description: Type af aggregering (hourly, daily, weekly, monthly, yearly)
-        TotalProduction_MWh:
-          type: number
-          description: Total produktion i MWh
-        WindProduction_MWh:
-          type: number
-          description: Vindproduktion i MWh
-        SolarProduction_MWh:
-          type: number
-          description: Solproduktion i MWh
-        HydroProduction_MWh:
-          type: number
-          description: Vandkraftproduktion i MWh
-        CommercialProduction_MWh:
-          type: number
-          description: Kommerciel kraftproduktion i MWh
-        CentralProduction_MWh:
-          type: number
-          description: Central kraftproduktion i MWh
-      example:
-        PeriodStart: "2023-01-01T00:00:00.000+00:00"
-        PeriodEnd: "2023-01-01T23:59:59.000+00:00"
-        PriceArea: "DK1"
-        AggregationType: "daily"
-        TotalProduction_MWh: 45862.3
-        WindProduction_MWh: 22541.8
-        SolarProduction_MWh: 1254.6
-        HydroProduction_MWh: 85.2
-        CommercialProduction_MWh: 8524.3
-        CentralProduction_MWh: 13456.4
 
-    ComparisonResponse:
-      type: object
-      properties:
-        MainPeriod:
-          type: object
-          properties:
-            From:
-              type: string
-              format: date-time
-            To:
-              type: string
-              format: date-time
-            PriceArea:
-              type: string
-            Data:
-              type: object
-              additionalProperties:
-                type: number
-        ComparePeriod:
-          type: object
-          properties:
-            From:
-              type: string
-              format: date-time
-            To:
-              type: string
-              format: date-time
-            PriceArea:
-              type: string
-            Data:
-              type: object
-              additionalProperties:
-                type: number
-        Difference:
-          type: object
-          additionalProperties:
-            type: number
-        PercentageChange:
-          type: object
-          additionalProperties:
-            type: number
-      example:
-        MainPeriod:
-          From: "2023-01-01T00:00:00.000+00:00"
-          To: "2023-01-31T23:59:59.000+00:00"
-          PriceArea: "DK1"
-          Data:
-            TotalConsumption_MWh: 1250000
-            WindProduction_MWh: 620000
-            SolarProduction_MWh: 35000
-        ComparePeriod:
-          From: "2022-01-01T00:00:00.000+00:00"
-          To: "2022-01-31T23:59:59.000+00:00"
-          PriceArea: "DK1"
-          Data:
-            TotalConsumption_MWh: 1200000
-            WindProduction_MWh: 580000
-            SolarProduction_MWh: 30000
-        Difference:
-          TotalConsumption_MWh: 50000
-          WindProduction_MWh: 40000
-          SolarProduction_MWh: 5000
-        PercentageChange:
-          TotalConsumption_MWh: 4.17
-          WindProduction_MWh: 6.9
-          SolarProduction_MWh: 16.67
 
-    ConsumptionForecastResponse:
+    BrancheData:
       type: object
-      description: |
-        Forbrugsprognose (afledt data, genereres dynamisk fra rå data og bør ikke gemmes permanent i databasen).
       properties:
-        RequestDate:
-          type: string
-          format: date-time
-          description: Dato for anmodningen
-        PriceArea:
-          type: string
-          description: Prisområde (DK1 eller DK2)
-        ForecastHorizon:
-          type: integer
-          description: Antal timer/dage for prognosen
-        ForecastData:
+        privatMWh:
+          type: number
+        offentligMWh:
+          type: number
+        erhvervMWh:
+          type: number
+
+    RegionalConsumption:
+      type: object
+      properties:
+        totalConsumptionMWh:
+          type: number
+        branche:
+          $ref: '#/components/schemas/BrancheData'
+        municipalities:
           type: array
           items:
-            type: object
-            properties:
-              Timestamp:
-                type: string
-                format: date-time
-              ConsumptionForecast_MWh:
-                type: number
-              ConfidenceLow_MWh:
-                type: number
-              ConfidenceHigh_MWh:
-                type: number
-      example:
-        RequestDate: "2023-05-15T10:30:00.000+00:00"
-        PriceArea: "DK1"
-        ForecastHorizon: 24
-        ForecastData:
-          - Timestamp: "2023-05-15T11:00:00.000+00:00"
-            ConsumptionForecast_MWh: 2450.3
-            ConfidenceLow_MWh: 2380.7
-            ConfidenceHigh_MWh: 2520.9
-          - Timestamp: "2023-05-15T12:00:00.000+00:00"
-            ConsumptionForecast_MWh: 2580.1
-            ConfidenceLow_MWh: 2505.6
-            ConfidenceHigh_MWh: 2654.7
+            $ref: '#/components/schemas/MunicipalityData'
 
-    CarbonIntensityData:
+    MunicipalityData:
       type: object
       properties:
-        Timestamp:
+        id:
+          type: integer
+        name:
           type: string
-          format: date-time
-          description: Tidspunkt for datapunktet
-        PriceArea:
-          type: string
-          description: Prisområde (DK1 eller DK2)
-        CarbonIntensity_gCO2perKWh:
+        totalConsumptionMWh:
           type: number
-          description: Carbon intensity i gram CO2 per kWh
-        EnergyMix:
-          type: object
-          properties:
-            Wind:
-              type: number
-              description: Procentdel af vindenergi
-            Solar:
-              type: number
-              description: Procentdel af solenergi
-            Hydro:
-              type: number
-              description: Procentdel af vandkraft
-            Fossil:
-              type: number
-              description: Procentdel af fossil energi
-            Nuclear:
-              type: number
-              description: Procentdel af atomkraft
-            Biomass:
-              type: number
-              description: Procentdel af bioenergi
-            Other:
-              type: number
-              description: Procentdel af andre energikilder
-      example:
-        Timestamp: "2023-04-10T15:00:00.000+00:00"
-        PriceArea: "DK1"
-        CarbonIntensity_gCO2perKWh: 97.5
-        EnergyMix:
-          Wind: 65.3
-          Solar: 12.5
-          Hydro: 1.2
-          Fossil: 8.7
-          Nuclear: 0
-          Biomass: 11.8
-          Other: 0.5
-
+        branche:
+          $ref: '#/components/schemas/BrancheData'
     Model:
       type: object
       properties:
@@ -960,6 +649,9 @@ components:
         modelBase64:
           type: string
           description: Base64-encoded model file
+        modelType:
+          type: string
+          description: Type of the model (e.g., DQN, A2C, PPO, LRU, LFU, TTL, NONE)
 
     ModelMetadata:
       type: object
@@ -973,4 +665,103 @@ components:
           format: date-time
         description:
           type: string
+        modelType:
+          type: string
+          description: Type of the model (e.g., DQN, A2C, PPO, LRU, LFU, TTL, NONE)
 
+
+    Consumptions:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Consumption'
+
+    Consumption:
+      type: object
+      properties:
+        hourUTC:
+          type: string
+          format: date-time
+        municipality_id:
+          type: integer
+        branche_id:
+          type: integer
+        consumption:
+          type: number
+
+    Productions:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Production'
+
+    Production:
+      type: object
+      properties:
+        hourUTC:
+          type: string
+          format: date-time
+        priceArea:
+          type: string
+        central_power:
+          type: number
+        local_power:
+          type: number
+        commercial_power:
+          type: number
+        commercial_power_self_consumption:
+          type: number
+        offshore_wind_lt_100mw:
+          type: number
+        offshore_wind_ge_100mw:
+          type: number
+        onshore_wind_lt_50kw:
+          type: number
+        onshore_wind_ge_50kw:
+          type: number
+        hydro_power:
+          type: number
+        solar_power_lt_10kw:
+          type: number
+        solar_power_ge_10kw_lt_40kw:
+          type: number
+        solar_power_ge_40kw:
+          type: number
+        solar_power_self_consumption:
+          type: number
+        unknown_production:
+          type: number
+
+    ExchangeEntries:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExchangeEntry'
+
+
+    ExchangeEntry:
+      type: object
+      properties:
+        hourUTC:
+          type: string
+          format: date-time
+        priceArea:
+          type: string
+        norway:
+          type: number
+        sweden:
+          type: number
+        germany:
+          type: number
+        netherlands:
+          type: number
+        greatBritain:
+          type: number
+        greatBelt:
+          type: number

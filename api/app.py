@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 
 from api.app_utils import get_derived_cache_columns, get_dynamic_feature_columns_enum, TrainingResponse, AlgorithmEnum, \
     CacheTableEnum, \
-    start_training_in_process, modelStatus, get_job_status, training_models, running_simulations, \
+    start_training_in_process, modelStatus, get_status, training_models, running_simulations, \
     DatabaseTypeEnum
 from config import DB_DRIVER, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_URL
 from core.model_training import evaluate_cache_model, export_model_to_torchscript
@@ -39,9 +39,19 @@ logger = logging.getLogger(__name__)
 # Global dictionaries to hold simulation & training model state
 app = FastAPI(
     title="Cache RL Optimization API",
-    description="API for training and deploying RL models for database cache optimization",
+    description="API for training and deploying RL models for database cache optimization.",
     version="1.0.0",
-    docs_url="/"
+    docs_url="/",
+    openapi_tags=[
+        {"name": "database", "description": "Endpoints for database schema inspection, seeding, and feature discovery."},
+        {"name": "training", "description": "Endpoints for starting and managing RL model training jobs."},
+        {"name": "models", "description": "Endpoints for querying and listing trained models."},
+        {"name": "evaluation", "description": "Endpoints for evaluating trained RL models."},
+        {"name": "deployment", "description": "Endpoints for exporting and deploying trained models."},
+        {"name": "simulation", "description": "Endpoints for running and managing cache metric simulations."},
+        {"name": "cache", "description": "Endpoints for cache weights and cache-related utilities."},
+        {"name": "monitoring", "description": "Endpoints for monitoring logs and application health."}
+    ]
 )
 running_simulations = {}
 
@@ -58,13 +68,12 @@ async def startup_db_client():
         logger.info("Database connection test successful")
 
 
-@app.get("/health")
+@app.get("/health", tags=["monitoring"], description="Health check for API and GPU availability")
 def health_check():
     return {"status": "ok", "gpu_available": is_cuda_available()}
 
 
-# Example endpoint that returns available columns
-@app.get("/available-columns", response_model=Dict[str, List[str]], tags=["database"])
+@app.get("/available-columns", response_model=Dict[str, List[str]], tags=["database"], description="Get available columns from the cache_metrics table")
 def available_columns(
         db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
         host: str = Query(DB_HOST, description="Database hostname"),
@@ -78,7 +87,7 @@ def available_columns(
     return {"available_columns": columns}
 
 
-@app.get("/feature-columns-enum", response_model=Dict[str, List[str]], tags=["database"])
+@app.get("/feature-columns-enum", response_model=Dict[str, List[str]], tags=["database"], description="Get available feature columns as enum values for selection")
 def feature_columns_enum(
         db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
         host: str = Query(DB_HOST, description="Database hostname"),
@@ -95,7 +104,7 @@ def feature_columns_enum(
     return {"feature_columns_enum": [e.value for e in FeatureColumnsEnum]}
 
 
-@app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new training model")
+@app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new RL model training job for cache optimization")
 async def start_training(
         background_tasks: BackgroundTasks,
         db_type: str = Query(
@@ -228,23 +237,21 @@ async def start_training(
     }
 
 
-@app.get("/models/{model_id}", response_model=modelStatus, tags=["models"],
-         description="Get the status of a training model")
+@app.get("/models/{model_id}", response_model=modelStatus, tags=["models"], description="Get the status and details of a specific training model")
 async def get_model(model_id: str):
-    return get_job_status(model_id)
+    return get_status(model_id)
 
 
-@app.get("/models", response_model=List[modelStatus], tags=["models"], description="List all training models")
-async def list_jobs():
+@app.get("/models", response_model=List[modelStatus], tags=["models"], description="List all training models and their statuses")
+async def list_models():
     return list(training_models.values())
 
 
-@app.post("/evaluate/{model_id}", response_model=Dict[str, Any], tags=["evaluation"],
-          description="Evaluate a trained model from a completed model")
-async def evaluate_job_model(model_id: str, steps: int = 1000, use_gpu: bool = False):
-    model = get_job_status(model_id)
+@app.post("/evaluate/{model_id}", response_model=Dict[str, Any], tags=["evaluation"], description="Evaluate a trained RL model and return performance metrics")
+async def evaluate_model(model_id: str, steps: int = 1000, use_gpu: bool = False):
+    model = get_status(model_id)
     if model["status"] != "completed":
-        raise HTTPException(status_code=400, detail=f"Job {model_id} is not completed")
+        raise HTTPException(status_code=400, detail=f"Model {model_id} is not completed")
     if not model["model_path"]:
         raise HTTPException(status_code=400, detail=f"No model path found for model {model_id}")
 
@@ -267,11 +274,11 @@ async def evaluate_job_model(model_id: str, steps: int = 1000, use_gpu: bool = F
     return results
 
 
-@app.post("/export/{model_id}", response_model=Dict[str, Any], tags=["deployment"])
-async def export_job_model(model_id: str, output_dir: str = "best_model"):
-    model = get_job_status(model_id)
+@app.post("/export/{model_id}", response_model=Dict[str, Any], tags=["deployment"], description="Export a trained model as TorchScript and save to database")
+async def export_model(model_id: str, output_dir: str = "best_model"):
+    model = get_status(model_id)
     if model["status"] != "completed":
-        raise HTTPException(status_code=400, detail=f"Job {model_id} is not completed")
+        raise HTTPException(status_code=400, detail=f"Model {model_id} is not completed")
     if not model["model_path"]:
         raise HTTPException(status_code=400, detail=f"No model path found for model {model_id}")
     try:
@@ -324,7 +331,7 @@ async def export_job_model(model_id: str, output_dir: str = "best_model"):
         raise HTTPException(status_code=500, detail=f"Failed to export model: {str(e)}")
 
 
-@app.post("/db/seed", response_model=Dict[str, Any], tags=["database"])
+@app.post("/db/seed", response_model=Dict[str, Any], tags=["database"], description="Seed the database with mock or simulated cache metrics and energy data")
 async def seed_database(
         db_type: str = Query(DatabaseTypeEnum.mysql, description="Database type: mysql, postgres, or sqlite"),
         host: str = Query(DB_HOST, description="Database hostname"),
@@ -386,7 +393,7 @@ async def seed_database(
         raise HTTPException(status_code=500, detail=f"Error seeding database: {str(e)}")
 
 
-@app.post("/simulation/start", response_model=Dict[str, Any], tags=["simulation"])
+@app.post("/simulation/start", response_model=Dict[str, Any], tags=["simulation"], description="Start a background simulation of cache metrics")
 async def start_simulation(
         db_type: str = Query("mysql"),
         host: str = Query("localhost"),
@@ -437,7 +444,7 @@ async def start_simulation(
         raise HTTPException(status_code=500, detail=f"Error starting simulation: {str(e)}")
 
 
-@app.post("/simulation/stop/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"])
+@app.post("/simulation/stop/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"], description="Stop a running simulation by ID")
 async def stop_simulation(simulation_id: str):
     """Stop a running simulation"""
     if simulation_id not in running_simulations:
@@ -467,7 +474,7 @@ async def stop_simulation(simulation_id: str):
         raise HTTPException(status_code=500, detail=f"Error stopping simulation: {str(e)}")
 
 
-@app.get("/simulation/status", response_model=Dict[str, Any], tags=["simulation"])
+@app.get("/simulation/status", response_model=Dict[str, Any], tags=["simulation"], description="Get status of all running cache metric simulations")
 async def simulation_status():
     """Get status of all running simulations"""
     result = {}
@@ -482,7 +489,7 @@ async def simulation_status():
     return {"simulations": result, "count": len(running_simulations)}
 
 
-@app.get("/simulation/status/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"])
+@app.get("/simulation/status/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"], description="Get status of a specific simulation by ID")
 async def get_simulation_status(simulation_id: str):
     """Get status of a specific simulation"""
     if simulation_id not in running_simulations:
@@ -499,7 +506,7 @@ async def get_simulation_status(simulation_id: str):
     }
 
 
-@app.get("/cache/derived/weights", response_model=Dict[str, Any], tags=["cache"])
+@app.get("/cache/derived/weights", response_model=Dict[str, Any], tags=["cache"], description="Get current cache weights for derived data, optionally filtered by endpoint")
 async def get_derived_data_weights(
         host: str = Query(DB_HOST, description="Database hostname"),
         port: int = Query(DB_PORT, description="Database port"),
@@ -544,8 +551,7 @@ async def get_derived_data_weights(
         raise HTTPException(status_code=500, detail=f"Error retrieving derived data weights: {str(e)}")
 
 
-# Add this endpoint to app.py
-@app.get("/logs", response_model=Dict[str, Any], tags=["monitoring"])
+@app.get("/logs", response_model=Dict[str, Any], tags=["monitoring"], description="Retrieve application logs with optional filtering")
 async def get_logs(
         lines: int = Query(100, description="Number of log lines to return"),
         level: Optional[str] = Query(None, description="Filter by log level (INFO, ERROR, etc.)"),

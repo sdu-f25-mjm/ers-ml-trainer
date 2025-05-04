@@ -505,6 +505,9 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
         step_reasoning = []  # New: reasoning per step
         in_cache = []  # New: is item in cache after action
 
+        # Add: Track which URLs (cache_names) are hit during evaluation
+        urls_hit = []
+
         eval_start = datetime.now()
 
         while not done and step_count < eval_steps:
@@ -542,6 +545,10 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
                 for cached_item in env.cache
             )
             in_cache.append(is_in_cache)
+
+            # Track cache_name (URL) for each step
+            cache_name = current_item.get("cache_name") if hasattr(current_item, "get") else current_item["cache_name"]
+            urls_hit.append(cache_name)
 
             step_count += 1
 
@@ -583,7 +590,8 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             'evaluation_time_seconds': eval_time,
             'device_used': device,
             'step_reasoning': step_reasoning,  # New
-            'in_cache': in_cache  # New
+            'in_cache': in_cache,  # New
+            'urls_hit': urls_hit  # Add this line to include URLs seen in evaluation
         }
     except Exception as e:
         logger.error(f"Model evaluation failed: {e}")
@@ -594,3 +602,4 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             return evaluate_cache_model(model_path, eval_steps, db_url, use_gpu=False, table_name=table_name)
 
         return {"error": str(e), "success": False}
+

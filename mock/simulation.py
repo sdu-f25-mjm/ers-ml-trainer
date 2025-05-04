@@ -1,246 +1,212 @@
-# database/simulation.py
-import logging
+import hashlib
+import json
 import random
 import time
-import uuid  # Add this import
+import urllib.parse
 from datetime import datetime, timedelta
 
-logger = logging.getLogger(__name__)
+API_ENDPOINTS = [
+    "/data",
+    "/production",
+    "/consumption",
+    "/exchange",
+    "/aggregated-production",
+    "/comparison",
+    "/forecast",
+    "/carbon-intensity"
+]
+
+PRICE_AREAS = ["DK1", "DK2"]
+PRODUCTION_TYPES = ["WIND", "SOLAR", "HYDRO", "COMMERCIAL_POWER", "CENTRAL_POWER"]
+EXCHANGE_COUNTRIES = ["GERMANY", "GREATBRITAIN", "NETHERLANDS", "NORWAY", "SWEDEN"]
+AGGREGATION_TYPES = ["HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"]
+COMPARISON_TYPES = ["PRODUCTION", "CONSUMPTION", "EXCHANGE"]
 
 
-def simulate_cache_metrics(db_handler, update_interval=5, run_duration=None, stop_event=None):
-    """
-    Simulate cache metrics for derived data endpoints using any database handler.
-
-    Args:
-        db_handler: Database handler instance (MySQL, PostgreSQL, or SQLite)
-        update_interval: Time between updates in seconds
-        run_duration: Total simulation time in seconds (None for indefinite)
-        stop_event: Threading event for stopping simulation
-    """
-    logger.info(f"Starting cache metrics simulation")
-    start_time = time.time()
-
-    # Define cache names for simulation
-    cache_names = [
-        "aggregated_production_cache",
-        "analysis_comparison_cache",
-        "forecast_consumption_cache",
-        "carbon_intensity_cache"
-    ]
-
-    try:
-        # Check if we need to initialize with data
-        result = db_handler.execute_query("SELECT COUNT(*) FROM cache_metrics")
-        count = 0
-        if result:
-            row = result.fetchone()
-            if hasattr(row, 'values'):
-                count = list(row.values())[0]
-            elif isinstance(row, dict):
-                count = row.get(list(row.keys())[0], 0)
-            elif isinstance(row, tuple):
-                count = row[0]
-
-        if count == 0:
-            logger.info("Initializing cache metrics table")
-            placeholder = db_handler.get_placeholder_symbol()
-
-            for cache_name in cache_names:
-                for i in range(10):  # 10 variations per cache
-                    hit_ratio = round(random.uniform(0.7, 0.99), 3)
-                    item_count = random.randint(100, 1000)
-                    load_time_ms = round(random.uniform(5, 100), 2)
-                    policy_triggered = random.choice([0, 1])
-                    rl_action_taken = random.choice(["evict", "keep", "promote", "demote"])
-                    size_bytes = random.randint(10_000_000, 500_000_000)
-                    timestamp = datetime.now() - timedelta(minutes=random.randint(1, 10080))
-                    traffic_intensity = round(random.uniform(0.1, 2.0), 3)
-                    cache_key = f"{cache_name}_{uuid.uuid4()}"  # Generate a unique cache key
-
-                    query = f"""
-                    INSERT INTO cache_metrics (
-                        cache_name, cache_key, hit_ratio, item_count, load_time_ms, policy_triggered,
-                        rl_action_taken, size_bytes, timestamp, traffic_intensity
-                    ) VALUES (
-                        {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                        {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}
-                    )
-                    """
-                    db_handler.execute_query(query, (
-                        cache_name, cache_key, hit_ratio, item_count, load_time_ms, policy_triggered,
-                        rl_action_taken, size_bytes, timestamp, traffic_intensity
-                    ))
-
-            db_handler.commit()
-
-        # Start simulation loop
-        while (run_duration is None or (time.time() - start_time < run_duration)):
-            if stop_event and stop_event.is_set():
-                logger.info("Stopping cache metrics simulation due to stop signal")
-                break
-
-            placeholder = db_handler.get_placeholder_symbol()
-            now = datetime.now()
-
-            for cache_name in cache_names:
-                # Randomly decide if this cache is accessed/updated
-                if random.random() < 0.7:
-                    # Get all entries for this cache
-                    query = f"SELECT * FROM cache_metrics WHERE cache_name = {placeholder}"
-                    cursor = db_handler.execute_query(query, (cache_name,))
-                    if not cursor:
-                        continue
-
-                    items = cursor.fetchall()
-                    if not items:
-                        continue
-
-                    # Normalize items to dictionaries if they aren't already
-                    normalized_items = []
-                    for item in items:
-                        if isinstance(item, dict):
-                            normalized_items.append(item)
-                        elif hasattr(item, 'keys'):
-                            normalized_items.append({k: item[k] for k in item.keys()})
-                        elif isinstance(item, tuple) and hasattr(cursor, 'description'):
-                            normalized_items.append({
-                                cursor.description[i][0]: item[i]
-                                for i in range(len(cursor.description))
-                            })
-
-                    if not normalized_items:
-                        continue
-
-                    # Select a few items to "access/update"
-                    accessed_items = random.sample(
-                        normalized_items,
-                        k=min(3, len(normalized_items))
-                    )
-
-                    for item in accessed_items:
-                        # Simulate metric changes
-                        hit_ratio = min(0.99, max(0.5, item.get('hit_ratio', 0.8) + random.uniform(-0.01, 0.01)))
-                        item_count = max(1, item.get('item_count', 100) + random.randint(-5, 5))
-                        load_time_ms = max(1.0, item.get('load_time_ms', 50.0) + random.uniform(-2, 2))
-                        policy_triggered = random.choice([0, 1])
-                        rl_action_taken = random.choice(["evict", "keep", "promote", "demote"])
-                        size_bytes = max(1_000_000,
-                                         item.get('size_bytes', 10_000_000) + random.randint(-100_000, 100_000))
-                        traffic_intensity = max(0.01, item.get('traffic_intensity', 1.0) + random.uniform(-0.05, 0.05))
-
-                        query = f"""
-                        UPDATE cache_metrics SET
-                            hit_ratio = {placeholder},
-                            item_count = {placeholder},
-                            load_time_ms = {placeholder},
-                            policy_triggered = {placeholder},
-                            rl_action_taken = {placeholder},
-                            size_bytes = {placeholder},
-                            timestamp = {placeholder},
-                            traffic_intensity = {placeholder}
-                        WHERE id = {placeholder}
-                        """
-                        db_handler.execute_query(query, (
-                            hit_ratio, item_count, load_time_ms, policy_triggered,
-                            rl_action_taken, size_bytes, now, traffic_intensity, item.get('id')
-                        ))
-
-            db_handler.commit()
-            logger.info(f"Updated cache metrics at {now}")
-
-            time.sleep(update_interval)
-
-        logger.info(f"Cache metrics simulation ended after {time.time() - start_time:.1f} seconds")
-        return True
-
-    except Exception as e:
-        logger.error(f"Error in cache metrics simulation: {e}")
-        return False
+def random_iso_date(start, end):
+    """Return random ISO8601 datetime string between two datetimes."""
+    delta = end - start
+    random_seconds = random.randint(0, int(delta.total_seconds()))
+    return (start + timedelta(seconds=random_seconds)).isoformat()
 
 
-def generate_random_parameters(endpoint_name):
-    """Generate realistic random parameters for the given endpoint"""
-    import random
-    from datetime import datetime, timedelta
+def generate_params(endpoint):
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
 
-    base_date = datetime.now()
-    price_areas = ["DK1", "DK2"]
-
-    # Common time ranges
-    short_range = {
-        "from": (base_date - timedelta(days=random.randint(1, 7))).isoformat(),
-        "to": base_date.isoformat()
-    }
-    medium_range = {
-        "from": (base_date - timedelta(days=random.randint(7, 30))).isoformat(),
-        "to": base_date.isoformat()
-    }
-
-    # Basic parameters
-    params = {
-        "priceArea": random.choice(price_areas)
-    }
-
-    if endpoint_name == "aggregated_production":
-        params.update(medium_range)
-        params.update({
-            "aggregationType": random.choice(["daily", "weekly", "monthly"]),
-            "productionType": random.choice(["wind", "solar", "central", "local", "total"])
-        })
-    elif endpoint_name == "analysis_comparison":
-        period1_start = base_date - timedelta(days=random.randint(60, 365))
-        period1_end = period1_start + timedelta(days=random.randint(7, 30))
-        period2_start = period1_end + timedelta(days=random.randint(1, 30))
-        period2_end = period2_start + timedelta(days=(period1_end - period1_start).days)
-
-        params.update({
-            "from": period1_start.isoformat(),
-            "to": period1_end.isoformat(),
-            "compareFrom": period2_start.isoformat(),
-            "compareTo": period2_end.isoformat(),
-            "comparisonType": random.choice(["production", "consumption", "exchange"])
-        })
-    elif endpoint_name == "forecast_consumption":
-        params.update({
-            "from": base_date.isoformat(),
-            "to": (base_date + timedelta(days=random.randint(1, 14))).isoformat(),
-            "forecastHorizon": random.choice(["24h", "48h", "7d", "14d"])
-        })
-    elif endpoint_name == "carbon_intensity":
-        params.update(medium_range)
-        params.update({
-            "resolution": random.choice(["hourly", "daily", "weekly"])
-        })
-    elif endpoint_name == "exchange_analysis":
-        params.update(medium_range)
-        params.update({
-            "country": random.choice(["germany", "norway", "sweden", "netherlands"]),
-            "flowType": random.choice(["import", "export", "net"])
-        })
+    if endpoint == "/data":
+        return {
+            "from": random_iso_date(month_ago, now),
+            "to": random_iso_date(week_ago, now),
+            "priceArea": random.choice(PRICE_AREAS)
+        }
+    elif endpoint == "/production":
+        return {
+            "from": random_iso_date(month_ago, now),
+            "to": random_iso_date(week_ago, now),
+            "priceArea": random.choice(PRICE_AREAS),
+            "productionType": random.choice(PRODUCTION_TYPES)
+        }
+    elif endpoint == "/consumption":
+        return {
+            "from": random_iso_date(month_ago, now),
+            "to": random_iso_date(week_ago, now),
+            "priceArea": random.choice(PRICE_AREAS)
+        }
+    elif endpoint == "/exchange":
+        return {
+            "from": random_iso_date(month_ago, now),
+            "to": random_iso_date(week_ago, now),
+            "exchangeCountry": random.choice(EXCHANGE_COUNTRIES)
+        }
+    elif endpoint == "/aggregated-production":
+        return {
+            "from": random_iso_date(month_ago, now),
+            "to": random_iso_date(week_ago, now),
+            "priceArea": random.choice(PRICE_AREAS),
+            "aggregationType": random.choice(AGGREGATION_TYPES),
+            "productionType": random.choice(PRODUCTION_TYPES)
+        }
+    elif endpoint == "/comparison":
+        a = random_iso_date(month_ago, now)
+        b = random_iso_date(week_ago, now)
+        c = random_iso_date(month_ago, now)
+        d = random_iso_date(week_ago, now)
+        return {
+            "from": a,
+            "to": b,
+            "compareFrom": c,
+            "compareTo": d,
+            "priceArea": random.choice(PRICE_AREAS),
+            "productionType": random.choice(PRODUCTION_TYPES),
+            "comparisonType": random.choice(COMPARISON_TYPES),
+            "exchangeCountry": random.choice(EXCHANGE_COUNTRIES)
+        }
+    elif endpoint == "/forecast":
+        return {
+            "priceArea": random.choice(PRICE_AREAS),
+            "horizon": random.randint(1, 720)
+        }
+    elif endpoint == "/carbon-intensity":
+        return {
+            "from": random_iso_date(month_ago, now),
+            "to": random_iso_date(week_ago, now),
+            "priceArea": random.choice(PRICE_AREAS),
+            "productionType": random.choice(PRODUCTION_TYPES),
+            "aggregationType": random.choice(AGGREGATION_TYPES)
+        }
     else:
-        # Fallback for any undefined endpoints
-        params.update(medium_range)
-
-    return params
+        return {}
 
 
-def generate_parameter_hash(params):
-    """Generate a hash for parameter combination"""
-    import hashlib
-    import json
-    param_str = json.dumps(params, sort_keys=True)
-    return hashlib.md5(param_str.encode()).hexdigest()
+def params_hash(params):
+    """Create a short hash from parameters for grouping cache entries."""
+    params_str = json.dumps(params, sort_keys=True)
+    return hashlib.md5(params_str.encode()).hexdigest()[:8]
 
 
-def calculate_priority(weights, recency, frequency, time_relevance,
-                       production_importance, volatility, complexity):
-    """Calculate the priority using the weighted formula"""
-    return (
-            weights['recency'] * recency +
-            weights['access_frequency'] * frequency +
-            weights['time_relevance'] * time_relevance +
-            weights['production_importance'] * production_importance +
-            weights['volatility'] * volatility +
-            weights['complexity'] * complexity
-    )
+def url_hash(url_string):
+    """Create a hash from the full URL string."""
+    return hashlib.md5(url_string.encode()).hexdigest()
+
+
+def filter_stable_params(endpoint, params):
+    """Remove date/time parameters for cache_name normalization."""
+    # Define which params are considered 'stable' for each endpoint
+    stable_keys = {
+        "/data": ["priceArea"],
+        "/production": ["priceArea", "productionType"],
+        "/consumption": ["priceArea"],
+        "/exchange": ["exchangeCountry"],
+        "/aggregated-production": ["priceArea", "aggregationType", "productionType"],
+        "/comparison": ["priceArea", "productionType", "comparisonType", "exchangeCountry"],
+        "/forecast": ["priceArea", "horizon"],
+        "/carbon-intensity": ["priceArea", "productionType", "aggregationType"],
+    }
+    keys = stable_keys.get(endpoint, [])
+    return {k: v for k, v in params.items() if k in keys}
+
+
+def simulate_visits(
+        n=10000,  # Increased default from 100 to 10000 (or any larger number)
+        sleep=0,
+        db_handler=None,
+        update_interval=5,
+        run_duration=None,
+        stop_event=None
+):
+    start_time = time.time()
+    i = 0
+    while (run_duration is None and i < n) or (run_duration is not None and (time.time() - start_time < run_duration)):
+        if stop_event and stop_event.is_set():
+            break
+
+        endpoint = random.choices(
+            API_ENDPOINTS,
+            weights=[25, 20, 20, 10, 10, 5, 5, 5],
+            k=1
+        )[0]
+        params = generate_params(endpoint)
+        visit_time = datetime.now()
+
+        # --- Normalize cache_name: only stable params, no date/time ---
+        stable_params = filter_stable_params(endpoint, params)
+        query_string = urllib.parse.urlencode(stable_params)
+        cache_name = f"{endpoint}?{query_string}" if query_string else endpoint
+        cache_key = url_hash(cache_name)
+
+        # Simulate metrics based on endpoint/params
+        if endpoint == "/data":
+            hit_ratio = round(random.uniform(0.8, 0.98), 3)
+            item_count = random.randint(500, 2000)
+            load_time_ms = round(random.uniform(30, 100), 2)
+        elif endpoint == "/forecast":
+            hit_ratio = round(random.uniform(0.6, 0.85), 3)
+            item_count = random.randint(10, 100)
+            load_time_ms = round(random.uniform(120, 300), 2)
+        elif endpoint == "/aggregated-production":
+            hit_ratio = round(random.uniform(0.7, 0.95), 3)
+            item_count = random.randint(100, 500)
+            load_time_ms = round(random.uniform(80, 200), 2)
+        else:
+            hit_ratio = round(random.uniform(0.75, 0.97), 3)
+            item_count = random.randint(50, 500)
+            load_time_ms = round(random.uniform(40, 180), 2)
+
+        policy_triggered = random.choice([0, 1])
+        rl_action_taken = random.choice(["evict", "keep", "promote", "demote"])
+        size_bytes = item_count * random.randint(1000, 20000)
+        traffic_intensity = round(item_count / max(visit_time.second + 1, 1) * random.uniform(0.5, 1.5), 3)
+
+        if db_handler is not None:
+            placeholder = db_handler.get_placeholder_symbol()
+            query = f"""
+                INSERT INTO cache_metrics (
+                    cache_name, cache_key, hit_ratio, item_count, load_time_ms,
+                    policy_triggered, rl_action_taken, size_bytes, timestamp, traffic_intensity
+                ) VALUES (
+                    {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
+                    {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}
+                )
+            """
+            db_handler.execute_query(
+                query,
+                (
+                    cache_name,
+                    cache_key,
+                    hit_ratio,
+                    item_count,
+                    load_time_ms,
+                    policy_triggered,
+                    rl_action_taken,
+                    size_bytes,
+                    visit_time,
+                    traffic_intensity
+                )
+            )
+            db_handler.commit()
+
+        if sleep:
+            time.sleep(sleep)
+        i += 1
