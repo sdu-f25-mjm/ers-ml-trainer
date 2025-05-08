@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from api.app_utils import get_derived_cache_columns, get_dynamic_feature_columns_enum, TrainingResponse, AlgorithmEnum, \
     CacheTableEnum, \
     start_training_in_process, modelStatus, get_status, training_models,DatabaseTypeEnum
-from config import DB_DRIVER, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_URL
+from config import DB_DRIVER, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_URL, API_URL
 from core.model_training import evaluate_cache_model, export_model_to_torchscript
 from core.utils import is_cuda_available, build_db_url, \
     build_custom_db_url
@@ -352,7 +352,7 @@ async def seed_database(
         user: str = Query(DB_USER, description="Database username"),
         password: str = Query(DB_PASSWORD, description="Database password"),
         database: str = Query(DB_NAME, description="Database name"),
-        api_url: str = Query("http://localhost:8282", description="API URL for data generation"),
+        api_url: str = Query(API_URL, description="API URL for data generation"),
         hours: int = Query(1000, description="Hours of data to generate"),
         data_types: Optional[List[TableEnum]] = Query(None, description="Data types: " + ", ".join(
             [e.name for e in TableEnum])),
@@ -411,14 +411,14 @@ async def seed_database(
 @app.post("/simulation/start", response_model=Dict[str, Any], tags=["Simulation"],
           description="Start a background simulation of cache metrics")
 async def start_simulation(
-        db_type: str = Query("mysql"),
-        host: str = Query("localhost"),
-        port: int = Query(3306),
-        user: str = Query("ers"),
-        password: str = Query("password"),
-        database: str = Query("ers"),
+        db_type: str = Query(DB_DRIVER),
+        host: str = Query(DB_HOST),
+        port: int = Query(DB_PORT),
+        user: str = Query(DB_USER),
+        password: str = Query(DB_PASSWORD),
+        database: str = Query(DB_NAME),
         update_interval: int = Query(5),
-        api_url: str = Query("http://localhost:8282", description="API URL for data generation"),
+        api_url: str = Query(API_URL, description="API URL for data generation"),
         run_duration: Optional[int] = Query(None, description="Duration of the simulation in seconds"),
         simulation_id: str = Query(None),
         n: int = Query(10000, description="Number of simulated visits to generate"),

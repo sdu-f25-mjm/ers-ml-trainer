@@ -8,9 +8,11 @@ import dotenv
 import requests
 import yaml
 
+from config import API_URL
+
 dotenv.load_dotenv()
 
-API_URL = os.getenv("API_URL", "http://localhost:8282")
+
 
 
 # --- Dynamically extract GET endpoints from ers-api.yaml ---
