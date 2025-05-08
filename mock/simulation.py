@@ -6,20 +6,15 @@ import urllib.parse
 from datetime import datetime, timedelta
 
 API_ENDPOINTS = [
-    "/data",
     "/production",
     "/consumption",
     "/exchange",
-    "/aggregated-production",
-    "/comparison",
-    "/forecast",
-    "/carbon-intensity"
 ]
 
+BRANCHE = ["Erhverv", "Offentligt", "Privat"]
 PRICE_AREAS = ["DK1", "DK2"]
 PRODUCTION_TYPES = ["WIND", "SOLAR", "HYDRO", "COMMERCIAL_POWER", "CENTRAL_POWER"]
-EXCHANGE_COUNTRIES = ["GERMANY", "GREATBRITAIN", "NETHERLANDS", "NORWAY", "SWEDEN"]
-AGGREGATION_TYPES = ["HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"]
+EXCHANGE_COUNTRIES = ["germany", "greatbritain", "netherlands", "norway", "sweden"]
 COMPARISON_TYPES = ["PRODUCTION", "CONSUMPTION", "EXCHANGE"]
 
 
@@ -35,13 +30,7 @@ def generate_params(endpoint):
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
 
-    if endpoint == "/data":
-        return {
-            "from": random_iso_date(month_ago, now),
-            "to": random_iso_date(week_ago, now),
-            "priceArea": random.choice(PRICE_AREAS)
-        }
-    elif endpoint == "/production":
+    if endpoint == "/production":
         return {
             "from": random_iso_date(month_ago, now),
             "to": random_iso_date(week_ago, now),
@@ -58,43 +47,7 @@ def generate_params(endpoint):
         return {
             "from": random_iso_date(month_ago, now),
             "to": random_iso_date(week_ago, now),
-            "exchangeCountry": random.choice(EXCHANGE_COUNTRIES)
-        }
-    elif endpoint == "/aggregated-production":
-        return {
-            "from": random_iso_date(month_ago, now),
-            "to": random_iso_date(week_ago, now),
-            "priceArea": random.choice(PRICE_AREAS),
-            "aggregationType": random.choice(AGGREGATION_TYPES),
-            "productionType": random.choice(PRODUCTION_TYPES)
-        }
-    elif endpoint == "/comparison":
-        a = random_iso_date(month_ago, now)
-        b = random_iso_date(week_ago, now)
-        c = random_iso_date(month_ago, now)
-        d = random_iso_date(week_ago, now)
-        return {
-            "from": a,
-            "to": b,
-            "compareFrom": c,
-            "compareTo": d,
-            "priceArea": random.choice(PRICE_AREAS),
-            "productionType": random.choice(PRODUCTION_TYPES),
-            "comparisonType": random.choice(COMPARISON_TYPES),
-            "exchangeCountry": random.choice(EXCHANGE_COUNTRIES)
-        }
-    elif endpoint == "/forecast":
-        return {
-            "priceArea": random.choice(PRICE_AREAS),
-            "horizon": random.randint(1, 720)
-        }
-    elif endpoint == "/carbon-intensity":
-        return {
-            "from": random_iso_date(month_ago, now),
-            "to": random_iso_date(week_ago, now),
-            "priceArea": random.choice(PRICE_AREAS),
-            "productionType": random.choice(PRODUCTION_TYPES),
-            "aggregationType": random.choice(AGGREGATION_TYPES)
+            "priceArea": random.choice(PRICE_AREAS)
         }
     else:
         return {}
@@ -115,14 +68,9 @@ def filter_stable_params(endpoint, params):
     """Remove date/time parameters for cache_name normalization."""
     # Define which params are considered 'stable' for each endpoint
     stable_keys = {
-        "/data": ["priceArea"],
         "/production": ["priceArea", "productionType"],
         "/consumption": ["priceArea"],
-        "/exchange": ["exchangeCountry"],
-        "/aggregated-production": ["priceArea", "aggregationType", "productionType"],
-        "/comparison": ["priceArea", "productionType", "comparisonType", "exchangeCountry"],
-        "/forecast": ["priceArea", "horizon"],
-        "/carbon-intensity": ["priceArea", "productionType", "aggregationType"],
+        "/exchange": ["priceArea"],
     }
     keys = stable_keys.get(endpoint, [])
     return {k: v for k, v in params.items() if k in keys}
@@ -142,11 +90,7 @@ def simulate_visits(
         if stop_event and stop_event.is_set():
             break
 
-        endpoint = random.choices(
-            API_ENDPOINTS,
-            weights=[25, 20, 20, 10, 10, 5, 5, 5],
-            k=1
-        )[0]
+        endpoint = random.choice(API_ENDPOINTS)
         params = generate_params(endpoint)
         visit_time = datetime.now()
 
@@ -156,23 +100,9 @@ def simulate_visits(
         cache_name = f"{endpoint}?{query_string}" if query_string else endpoint
         cache_key = url_hash(cache_name)
 
-        # Simulate metrics based on endpoint/params
-        if endpoint == "/data":
-            hit_ratio = round(random.uniform(0.8, 0.98), 3)
-            item_count = random.randint(500, 2000)
-            load_time_ms = round(random.uniform(30, 100), 2)
-        elif endpoint == "/forecast":
-            hit_ratio = round(random.uniform(0.6, 0.85), 3)
-            item_count = random.randint(10, 100)
-            load_time_ms = round(random.uniform(120, 300), 2)
-        elif endpoint == "/aggregated-production":
-            hit_ratio = round(random.uniform(0.7, 0.95), 3)
-            item_count = random.randint(100, 500)
-            load_time_ms = round(random.uniform(80, 200), 2)
-        else:
-            hit_ratio = round(random.uniform(0.75, 0.97), 3)
-            item_count = random.randint(50, 500)
-            load_time_ms = round(random.uniform(40, 180), 2)
+        hit_ratio = round(random.uniform(0.75, 0.97), 3)
+        item_count = random.randint(50, 500)
+        load_time_ms = round(random.uniform(40, 180), 2)
 
         policy_triggered = random.choice([0, 1])
         rl_action_taken = random.choice(["evict", "keep", "promote", "demote"])
@@ -181,32 +111,10 @@ def simulate_visits(
 
         if db_handler is not None:
             placeholder = db_handler.get_placeholder_symbol()
-            query = f"""
-                INSERT INTO cache_metrics (
-                    cache_name, cache_key, hit_ratio, item_count, load_time_ms,
-                    policy_triggered, rl_action_taken, size_bytes, timestamp, traffic_intensity
-                ) VALUES (
-                    {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                    {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}
-                )
-            """
-            db_handler.execute_query(
-                query,
-                (
-                    cache_name,
-                    cache_key,
-                    hit_ratio,
-                    item_count,
-                    load_time_ms,
-                    policy_triggered,
-                    rl_action_taken,
-                    size_bytes,
-                    visit_time,
-                    traffic_intensity
-                )
-            )
-            db_handler.commit()
-
-        if sleep:
-            time.sleep(sleep)
-        i += 1
+            # Update INSERT INTO statements to match the columns in database/01_create_tables.sql
+            if endpoint == "/production":
+                query = f"""
+                    INSERT INTO production (
+                        hourUTC, price_area_id, central_power, local_power, commercial_power,
+                        commercial_power_self_consumption, offshore_wind_lt_100mw, offshore_wind_ge_100mw,
+                        onshore_wind_lt_50kw, onshore_wind_ge_50

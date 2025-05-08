@@ -43,14 +43,11 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/",
     openapi_tags=[
-        {"name": "database", "description": "Endpoints for database schema inspection, seeding, and feature discovery."},
-        {"name": "training", "description": "Endpoints for starting and managing RL model training jobs."},
-        {"name": "models", "description": "Endpoints for querying and listing trained models."},
-        {"name": "evaluation", "description": "Endpoints for evaluating trained RL models."},
-        {"name": "deployment", "description": "Endpoints for exporting and deploying trained models."},
-        {"name": "simulation", "description": "Endpoints for running and managing cache metric simulations."},
-        {"name": "cache", "description": "Endpoints for cache weights and cache-related utilities."},
-        {"name": "monitoring", "description": "Endpoints for monitoring logs and application health."}
+        {"name": "database",
+         "description": "Endpoints for database schema inspection, seeding, and feature discovery."},
+        {"name": "Reinforcement Learning", "description": "Endpoints for starting and managing RL model training jobs."},
+        {"name": "Simulation", "description": "Endpoints for running and managing cache metric simulations."},
+        {"name": "Monitoring", "description": "Endpoints for monitoring logs and application health."}
     ]
 )
 running_simulations = {}
@@ -73,7 +70,8 @@ def health_check():
     return {"status": "ok", "gpu_available": is_cuda_available()}
 
 
-@app.get("/available-columns", response_model=Dict[str, List[str]], tags=["database"], description="Get available columns from the cache_metrics table")
+@app.get("/available-columns", response_model=Dict[str, List[str]], tags=["database"],
+         description="Get available columns from the cache_metrics table")
 def available_columns(
         db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
         host: str = Query(DB_HOST, description="Database hostname"),
@@ -87,7 +85,8 @@ def available_columns(
     return {"available_columns": columns}
 
 
-@app.get("/feature-columns-enum", response_model=Dict[str, List[str]], tags=["database"], description="Get available feature columns as enum values for selection")
+@app.get("/feature-columns-enum", response_model=Dict[str, List[str]], tags=["database"],
+         description="Get available feature columns as enum values for selection")
 def feature_columns_enum(
         db_type: str = Query(DB_DRIVER, description="Database type: mysql, postgres, or sqlite"),
         host: str = Query(DB_HOST, description="Database hostname"),
@@ -104,7 +103,8 @@ def feature_columns_enum(
     return {"feature_columns_enum": [e.value for e in FeatureColumnsEnum]}
 
 
-@app.post("/train", response_model=TrainingResponse, tags=["training"], description="Start a new RL model training job for cache optimization")
+@app.post("/train", response_model=TrainingResponse, tags=["Reinforcement Learning"],
+          description="Start a new RL model training job for cache optimization")
 async def start_training(
         background_tasks: BackgroundTasks,
         db_type: str = Query(
@@ -237,17 +237,20 @@ async def start_training(
     }
 
 
-@app.get("/models/{model_id}", response_model=modelStatus, tags=["models"], description="Get the status and details of a specific training model")
+@app.get("/models/{model_id}", response_model=modelStatus, tags=["Reinforcement Learning"],
+         description="Get the status and details of a specific training model")
 async def get_model(model_id: str):
     return get_status(model_id)
 
 
-@app.get("/models", response_model=List[modelStatus], tags=["models"], description="List all training models and their statuses")
+@app.get("/models", response_model=List[modelStatus], tags=["Reinforcement Learning"],
+         description="List all training models and their statuses")
 async def list_models():
     return list(training_models.values())
 
 
-@app.post("/evaluate/{model_id}", response_model=Dict[str, Any], tags=["evaluation"], description="Evaluate a trained RL model and return performance metrics")
+@app.post("/evaluate/{model_id}", response_model=Dict[str, Any], tags=["Reinforcement Learning"],
+          description="Evaluate a trained RL model and return performance metrics")
 async def evaluate_model(model_id: str, steps: int = 1000, use_gpu: bool = False):
     model = get_status(model_id)
     if model["status"] != "completed":
@@ -274,7 +277,8 @@ async def evaluate_model(model_id: str, steps: int = 1000, use_gpu: bool = False
     return results
 
 
-@app.post("/export/{model_id}", response_model=Dict[str, Any], tags=["deployment"], description="Export a trained model as TorchScript and save to database")
+@app.post("/export/{model_id}", response_model=Dict[str, Any], tags=["Reinforcement Learning"],
+          description="Export a trained model as TorchScript and save to database")
 async def export_model(model_id: str, output_dir: str = "best_model"):
     model = get_status(model_id)
     if model["status"] != "completed":
@@ -293,22 +297,32 @@ async def export_model(model_id: str, output_dir: str = "best_model"):
         )
         logger.info(f"Exported model to: {output_path}")
 
-        # Read input dimension from metadata.json if available
+        # Save metadata for Java/consumer compatibility
         meta_path = os.path.join(output_dir, "metadata.json")
-        input_dimension = None
+        if not os.path.exists(meta_path):
+            # fallback: try to copy from training
+            orig_meta = model_path.replace(".zip", ".meta.json")
+            if os.path.exists(orig_meta):
+                import shutil
+                shutil.copy(orig_meta, meta_path)
+
+        # Load metadata for extended info
+        metadata = {}
         if os.path.exists(meta_path):
             with open(meta_path, "r") as f:
-                meta = json.load(f)
-                obs_shape = meta.get("observation_space_shape")
-                if obs_shape and isinstance(obs_shape, list) and len(obs_shape) > 0:
-                    input_dimension = obs_shape[0]
+                metadata = json.load(f)
 
         with open(output_path, "rb") as f:
             model_bytes = f.read()
         model_base64 = base64.b64encode(model_bytes).decode("utf-8")
 
         description = model
-        model_type = model.get("metrics", {}).get("algorithm")
+        model_type = model.get("metrics", {}).get("algorithm") or metadata.get("algorithm")
+        input_dimension = None
+        if "observation_space_shape" in metadata:
+            shape = metadata["observation_space_shape"]
+            if isinstance(shape, (list, tuple)) and len(shape) > 0:
+                input_dimension = shape[0]
 
         save_best_model_base64(
             engine,
@@ -316,7 +330,15 @@ async def export_model(model_id: str, output_dir: str = "best_model"):
             model_base64,
             description,
             model_type,
-            input_dimension
+            input_dimension=input_dimension,
+            algorithm=metadata.get("algorithm"),
+            device=metadata.get("device"),
+            cache_size=metadata.get("cache_size"),
+            batch_size=metadata.get("batch_size"),
+            learning_rate=metadata.get("learning_rate"),
+            timesteps=metadata.get("timesteps"),
+            feature_columns=metadata.get("feature_columns"),
+            trained_at=metadata.get("trained_at"),
         )
         return {
             "model_id": model_id,
@@ -325,13 +347,14 @@ async def export_model(model_id: str, output_dir: str = "best_model"):
             "output_directory": output_dir,
             "status": "success",
             "saved_to_db": True,
-            "input_dimension": input_dimension
+            "metadata_path": meta_path
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to export model: {str(e)}")
 
 
-@app.post("/db/seed", response_model=Dict[str, Any], tags=["database"], description="Seed the database with mock or simulated cache metrics and energy data")
+@app.post("/db/seed", response_model=Dict[str, Any], tags=["database"],
+          description="Seed the database with mock or simulated cache metrics and energy data")
 async def seed_database(
         db_type: str = Query(DatabaseTypeEnum.mysql, description="Database type: mysql, postgres, or sqlite"),
         host: str = Query(DB_HOST, description="Database hostname"),
@@ -339,6 +362,7 @@ async def seed_database(
         user: str = Query(DB_USER, description="Database username"),
         password: str = Query(DB_PASSWORD, description="Database password"),
         database: str = Query(DB_NAME, description="Database name"),
+        api_url: str = Query("http://localhost:8282", description="API URL for data generation"),
         hours: int = Query(1000, description="Hours of data to generate"),
         data_types: Optional[List[TableEnum]] = Query(None, description="Data types: " + ", ".join(
             [e.name for e in TableEnum])),
@@ -364,11 +388,12 @@ async def seed_database(
                     raise HTTPException(status_code=500, detail=f"Failed to connect to {db_type} database")
             from database.create_tables import create_tables
             create_tables(db_handler)
-            from mock.simulate_live import simulate_visits
             simulate_visits(
                 n=n,
-                db_handler=db_handler,
-                run_duration=10  # or adjust as needed
+                update_interval=0,
+                api_url=api_url,
+                run_duration=hours,
+                stop_event=None  # or adjust as needed
             )
             db_handler.commit()
             db_handler.close()
@@ -382,7 +407,7 @@ async def seed_database(
                 port=port,
                 hours=hours,
                 db_type=db_type,
-                data_types=data_types
+                data_types=data_types,
             )
 
             if success:
@@ -393,15 +418,18 @@ async def seed_database(
         raise HTTPException(status_code=500, detail=f"Error seeding database: {str(e)}")
 
 
-@app.post("/simulation/start", response_model=Dict[str, Any], tags=["simulation"], description="Start a background simulation of cache metrics")
+@app.post("/simulation/start", response_model=Dict[str, Any], tags=["simulation"],
+          description="Start a background simulation of cache metrics")
 async def start_simulation(
         db_type: str = Query("mysql"),
         host: str = Query("localhost"),
         port: int = Query(3306),
-        user: str = Query("cacheuser"),
-        password: str = Query("cachepass"),
-        database: str = Query("cache_db"),
+        user: str = Query("ers"),
+        password: str = Query("password"),
+        database: str = Query("ers"),
         update_interval: int = Query(5),
+        api_url: str = Query("http://localhost:8282", description="API URL for data generation"),
+        run_duration: Optional[int] = Query(None, description="Duration of the simulation in seconds"),
         simulation_id: str = Query(None),
         n: int = Query(10000, description="Number of simulated visits to generate"),
 ):
@@ -420,9 +448,10 @@ async def start_simulation(
 
         sim_thread = threading.Thread(
             target=simulate_visits,
-            args=(n, update_interval, db_handler, update_interval, None, stop_event),  # adapt as needed
+            args=(n, update_interval, api_url, run_duration, stop_event),  # adapt as needed
             daemon=True
         )
+
         sim_thread.start()
 
         running_simulations[sim_id] = {
@@ -431,7 +460,7 @@ async def start_simulation(
             "start_time": datetime.now().isoformat(),
             "db_type": db_type,
             "database": database,
-            "update_interval": update_interval
+            "run_duration": run_duration
         }
 
         return {
@@ -444,7 +473,8 @@ async def start_simulation(
         raise HTTPException(status_code=500, detail=f"Error starting simulation: {str(e)}")
 
 
-@app.post("/simulation/stop/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"], description="Stop a running simulation by ID")
+@app.post("/simulation/stop/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"],
+          description="Stop a running simulation by ID")
 async def stop_simulation(simulation_id: str):
     """Stop a running simulation"""
     if simulation_id not in running_simulations:
@@ -474,7 +504,8 @@ async def stop_simulation(simulation_id: str):
         raise HTTPException(status_code=500, detail=f"Error stopping simulation: {str(e)}")
 
 
-@app.get("/simulation/status", response_model=Dict[str, Any], tags=["simulation"], description="Get status of all running cache metric simulations")
+@app.get("/simulation/status", response_model=Dict[str, Any], tags=["simulation"],
+         description="Get status of all running cache metric simulations")
 async def simulation_status():
     """Get status of all running simulations"""
     result = {}
@@ -482,14 +513,15 @@ async def simulation_status():
         result[sim_id] = {
             "db_type": data["db_type"],
             "database": data["database"],
-            "update_interval": data["update_interval"],
+            "run_duration": data["run_duration"],
             "start_time": data["start_time"],
             "running": data["thread"].is_alive()
         }
     return {"simulations": result, "count": len(running_simulations)}
 
 
-@app.get("/simulation/status/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"], description="Get status of a specific simulation by ID")
+@app.get("/simulation/status/{simulation_id}", response_model=Dict[str, Any], tags=["simulation"],
+         description="Get status of a specific simulation by ID")
 async def get_simulation_status(simulation_id: str):
     """Get status of a specific simulation"""
     if simulation_id not in running_simulations:
@@ -500,13 +532,14 @@ async def get_simulation_status(simulation_id: str):
         "simulation_id": simulation_id,
         "db_type": data["db_type"],
         "database": data["database"],
-        "update_interval": data["update_interval"],
+        "run_duration": data["run_duration"],
         "start_time": data["start_time"],
         "running": data["thread"].is_alive()
     }
 
 
-@app.get("/cache/derived/weights", response_model=Dict[str, Any], tags=["cache"], description="Get current cache weights for derived data, optionally filtered by endpoint")
+@app.get("/cache/derived/weights", response_model=Dict[str, Any], tags=["Reinforcement Learning"],
+         description="Get current cache weights for derived data, optionally filtered by endpoint")
 async def get_derived_data_weights(
         host: str = Query(DB_HOST, description="Database hostname"),
         port: int = Query(DB_PORT, description="Database port"),
@@ -551,7 +584,8 @@ async def get_derived_data_weights(
         raise HTTPException(status_code=500, detail=f"Error retrieving derived data weights: {str(e)}")
 
 
-@app.get("/logs", response_model=Dict[str, Any], tags=["monitoring"], description="Retrieve application logs with optional filtering")
+@app.get("/logs", response_model=Dict[str, Any], tags=["monitoring"],
+         description="Retrieve application logs with optional filtering")
 async def get_logs(
         lines: int = Query(100, description="Number of log lines to return"),
         level: Optional[str] = Query(None, description="Filter by log level (INFO, ERROR, etc.)"),
@@ -635,3 +669,4 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+

@@ -65,205 +65,96 @@ def get_db_handler(db_type):
         raise ValueError(f"Unsupported database type: {db_type}")
 
 
-def generate_energy_data(db_handler, hours, price_areas):
-    """
-    Generate mock energy data for a given number of hours for each price area and insert the data into the energy_data table.
-
-    Args:
-        db_handler: A database handler instance.
-        hours (int): Number of hourly data points to generate.
-        price_areas (list): List of price area strings (e.g., ["DK1", "DK2"]).
-    """
-    start_time = datetime.utcnow()
-    placeholder = db_handler.get_placeholder_symbol()
-
-    # Build the INSERT query using the handler's placeholder symbol.
-    query = f"""
-    INSERT INTO energy_data (
-        timestamp, price_area, central_power_mwh, local_power_mwh,
-        gross_consumption_mwh, exchange_no_mwh, exchange_se_mwh, exchange_de_mwh,
-        solar_power_self_con_mwh, grid_loss_transmission_mwh
-    ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
-    """
-
-    for hour in range(hours):
-        # Calculate timestamp for current hour
-        hour_timestamp = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now()).isoformat()
-        for area in price_areas:
-            # Generate random energy values
-            central_power = random.uniform(0, 1000)
-            local_power = random.uniform(0, 1000)
-            gross_consumption = random.uniform(0, 1000)
-            exchange_no = random.uniform(-100, 100)
-            exchange_se = random.uniform(-100, 100)
-            exchange_de = random.uniform(-100, 100)
-            solar_self_con = random.uniform(0, 100)
-            grid_loss_trans = random.uniform(0, 100)
-
-            params = (
-                hour_timestamp, area, central_power, local_power,
-                gross_consumption, exchange_no, exchange_se, exchange_de,
-                solar_self_con, grid_loss_trans
-            )
-            db_handler.execute_query(query, params)
-
-    db_handler.commit()
-    logger.info("Mock energy data generation completed.")
-
-
 def generate_production_data(db_handler, hours, price_areas, types):
     placeholder = db_handler.get_placeholder_symbol()
-
     insert_query = f"""
-    INSERT INTO production_data (
-                timestamp, price_area, wind_total_mwh, offshore_wind_total_mwh, offshore_wind_lt100mw_mwh,
-                offshore_wind_ge100mw_mwh, onshore_wind_total_mwh,onshore_wind_ge50_kw_mwh, solar_total_mwh,
-                 solar_total_no_self_consumption_mwh, solar_power_self_consumption_mwh, solar_power_ge40_kw_mwh,
-                  solar_power_ge10_lt40_kw_mwh, solar_power_lt10_kw_mwh, commercial_power_mwh,
-                commercial_power_self_consumption_mwh, central_power_mwh, hydro_power_mwh,local_power_mwh
-                ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}
-                )"""
-
+    INSERT INTO production (
+        hourUTC, price_area_id, central_power, local_power, commercial_power,
+        commercial_power_self_consumption, offshore_wind_lt_100mw, offshore_wind_ge_100mw,
+        onshore_wind_lt_50kw, onshore_wind_ge_50kw, hydro_power, solar_power_lt_10kw,
+        solar_power_ge_10kw_lt_40kw, solar_power_ge_40kw, solar_power_self_consumption,
+        unknown_production
+    ) VALUES (
+        {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
+        {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
+        {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}
+    )
+    """
     for hour_offset in range(hours):
-        ts = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now()).isoformat()
-        for price_area in price_areas:
-            # Initialize all production values to zero.
-            wind_total = offshore_total = offshore_lt = offshore_ge = onshore = 0
-            solar_total = solar_no_self = solar_self = solar_ge40 = solar_ge10 = 0
-            commercial = commercial_self = central = hydro = local = 0
-
-            # Simulate wind production values.
-            if "wind" in types:
-                wind_total = random.uniform(50, 150)
-                offshore_total = random.uniform(20, 100)
-                offshore_lt = random.uniform(10, 50)
-                offshore_ge = offshore_total - offshore_lt
-                onshore = random.uniform(20, 60)
-                onshore_ge50 = random.uniform(5, 20)
-
-            # Simulate solar production values.
-            if "solar" in types:
-                solar_total = random.uniform(30, 90)
-                solar_no_self = solar_total * random.uniform(0.5, 0.9)
-                solar_self = solar_total - solar_no_self
-                solar_ge40 = random.uniform(5, 20)
-                solar_ge10 = random.uniform(10, 30)
-                solar_lt10 = random.uniform(8, 25)
-
-            # Simulate hydro production.
-            if "hydro" in types:
-                hydro = random.uniform(10, 40)
-
-            # Simulate commercial power production.
-            if "commercialPower" in types:
-                commercial = random.uniform(30, 100)
-                commercial_self = random.uniform(5, 20)
-
-            # Simulate central power production.
-            if "centralPower" in types:
-                central = random.uniform(40, 120)
-
-            # Simulate local production, if applicable.
-            if "local" in types:
-                local = random.uniform(10, 50)
-
-            params = (ts, price_area, wind_total, offshore_total, offshore_lt,
-                      offshore_ge, onshore, onshore_ge50, solar_total, solar_no_self,
-                      solar_self, solar_ge40, solar_ge10, solar_lt10, commercial,
-                      commercial_self, central, hydro, local)
+        ts = get_random_date_between(datetime(2020, 1, 1, 0, 0, 0, 0), datetime.now())
+        for price_area_id in [1, 2]:  # DK1=1, DK2=2
+            params = (
+                ts,
+                price_area_id,
+                random.randint(100, 1000),  # central_power
+                random.randint(50, 500),  # local_power
+                random.randint(50, 500),  # commercial_power
+                random.randint(10, 100),  # commercial_power_self_consumption
+                random.randint(10, 200),  # offshore_wind_lt_100mw
+                random.randint(10, 200),  # offshore_wind_ge_100mw
+                random.randint(10, 200),  # onshore_wind_lt_50kw
+                random.randint(10, 200),  # onshore_wind_ge_50kw
+                random.randint(10, 200),  # hydro_power
+                random.randint(10, 200),  # solar_power_lt_10kw
+                random.randint(10, 200),  # solar_power_ge_10kw_lt_40kw
+                random.randint(10, 200),  # solar_power_ge_40kw
+                random.randint(10, 200),  # solar_power_self_consumption
+                random.randint(10, 200),  # unknown_production
+            )
             db_handler.execute_query(insert_query, params)
-
     db_handler.commit()
     logger.info("Mock production data generation completed.")
 
 
 def generate_consumption_data(db_handler, hours, price_areas):
-    """
-    Generate mock consumption data for the specified number of hours and price areas.
-
-    Args:
-        db_handler: instance of the database handler.
-        hours: number of hours for which to generate data.
-        price_areas: list of price areas (e.g., ['DK1', 'DK2']).
-    """
     placeholder = db_handler.get_placeholder_symbol()
-
-    # Create a starting timestamp (current time minus 'hours' hours)
-    start_time = datetime.now() - timedelta(hours=hours)
-
-    # Loop over each hour and each price area to generate a record.
+    insert_query = f"""
+    INSERT INTO consumption (
+        hourUTC, municipality_id, branche_id, consumption
+    ) VALUES (
+        {placeholder}, {placeholder}, {placeholder}, {placeholder}
+    )
+    """
     for i in range(hours):
-        timestamp = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now()).isoformat()
-        for area in price_areas:
-            consumption_total = random.uniform(100, 500)  # Example ranges
-            consumption_private = random.uniform(50, consumption_total)
-            consumption_public = random.uniform(10, consumption_total - consumption_private)
-            consumption_commertial = random.uniform(5, consumption_total - consumption_private - consumption_public)
-            grid_loss_transmission = random.uniform(0, 50)
-            grid_loss_interconnectors = random.uniform(0, 20)
-            grid_loss_distribution = random.uniform(0, 30)
-            power_to_heat = random.uniform(0, 40)
-
-            query = f"""
-            INSERT INTO consumption_data (
-                timestamp,
-                price_area,
-                consumption_total_mwh,
-                consumption_private_mwh,
-                consumption_public_total_mwh,
-                consumption_commertial_total_mwh,
-                grid_loss_transmission_mwh,
-                grid_loss_interconnectors_mwh,
-                grid_loss_distribution_mwh,
-                power_to_heat_mwh
-            ) VALUES (
-                {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                {placeholder}, {placeholder}
-            )
-            """
-
-            params = (
-                timestamp, area, consumption_total, consumption_private,
-                consumption_public, consumption_commertial, grid_loss_transmission,
-                grid_loss_interconnectors, grid_loss_distribution, power_to_heat
-            )
-            db_handler.execute_query(query, params)
-
+        ts = get_random_date_between(datetime(2020, 1, 1, 0, 0, 0, 0), datetime.now())
+        for area_id in [1, 2]:  # DK1=1, DK2=2
+            municipality_id = random.choice(range(101, 1000))  # Use seeded IDs
+            branche_id = random.choice([1, 2, 3])  # 1=Erhverv, 2=Offentligt, 3=Privat
+            consumption = random.randint(100, 1000)
+            params = (ts, municipality_id, branche_id, consumption)
+            db_handler.execute_query(insert_query, params)
     db_handler.commit()
     logger.info("Mock consumption data generation completed.")
 
 
 def generate_exchange_data(db_handler, hours, countries):
-    base_time = datetime.now()
-    # Define possible price areas for exchange records
-    price_areas = ["DK1", "DK2"]
+    placeholder = db_handler.get_placeholder_symbol()
+    insert_query = f"""
+    INSERT INTO exchange (
+        hourUTC, price_area_id, exchange_to_norway, exchange_to_sweden,
+        exchange_to_germany, exchange_to_netherlands, exchange_to_gb,
+        exchange_over_the_great_belt
+    ) VALUES (
+        {placeholder}, {placeholder}, {placeholder}, {placeholder},
+        {placeholder}, {placeholder}, {placeholder}, {placeholder}
+    )
+    """
     for hour in range(hours):
-        # Generate a timestamp for this hour
-        ts = get_random_date_between(datetime(1970, 1, 1, 0, 0, 0, 000), datetime.now()).isoformat()
-        for country in countries:
-            # Randomly select a price area
-            price_area = random.choice(price_areas)
-            # Generate random exchange values
-            import_mwh = round(random.uniform(50, 150), 2)
-            export_mwh = round(random.uniform(50, 150), 2)
-            net_exchange = round(export_mwh - import_mwh, 2)
-
-            query = """
-                    INSERT INTO exchange_data (timestamp,
-                                               price_area,
-                                               exchange_country,
-                                               import_mwh,
-                                               export_mwh,
-                                               net_exchange_mwh)
-                    VALUES (%s, %s, %s, %s, %s, %s) \
-                    """
-            params = (ts, price_area, country, import_mwh, export_mwh, net_exchange)
-            db_handler.execute_query(query, params)
-
+        ts = get_random_date_between(datetime(2020, 1, 1, 0, 0, 0, 0), datetime.now())
+        for price_area_id in [1, 2]:  # DK1=1, DK2=2
+            params = (
+                ts,
+                price_area_id,
+                random.randint(10, 200),  # exchange_to_norway
+                random.randint(10, 200),  # exchange_to_sweden
+                random.randint(10, 200),  # exchange_to_germany
+                random.randint(10, 200),  # exchange_to_netherlands
+                random.randint(10, 200),  # exchange_to_gb
+                random.randint(10, 200),  # exchange_over_the_great_belt
+            )
+            db_handler.execute_query(insert_query, params)
     db_handler.commit()
+    logger.info("Mock exchange data generation completed.")
 
 
 def generate_mock_database(
@@ -294,17 +185,12 @@ def generate_mock_database(
             return True
     else:
         data_types = [
-            "energy_data", "production_data", "consumption_data", "exchange_data",
-            "carbon_intensity", "aggregated_production",
-            "comparison_analysis", "consumption_forecast", "cache_metrics"
+            "production", "consumption", "exchange_data", "cache_metrics"
         ]
 
     price_areas = ["DK1", "DK2"]
     countries = ["germany", "greatbritain", "netherlands", "norway", "sweden"]
     types = ["wind", "solar", "hydro", "commercialPower", "centralPower", "local"]
-    aggregationTypes = ["hourly", "daily", "weekly", "monthly", "yearly"]
-    comparisonTypes = ["absolute", "percentage", "yearOverYear", "custom"]
-    horizon = 24
 
     if db_type not in ['mysql', 'postgres', 'sqlite']:
         logger.error(f"Unsupported database type: {db_type}")
@@ -313,9 +199,7 @@ def generate_mock_database(
     # If no selection provided, generate all mock data.
     if data_types is None:
         data_types = [
-            "energy_data", "production_data", "consumption_data", "exchange_data",
-            "carbon_intensity", "aggregated_production",
-            "comparison_analysis", "consumption_forecast", "cache_metrics"
+            "production", "consumption_data", "exchange_data", "cache_metrics"
         ]
 
     logger.info(f"Generating mock database for {db_type} with {hours} hours of data for: {', '.join(price_areas)}")
@@ -335,10 +219,8 @@ def generate_mock_database(
         create_tables(db_handler)
 
         # Generate mock data based on selection
-        if "energy_data" in data_types:
-            logger.info("Generating mock energy data")
-            generate_energy_data(db_handler, hours, price_areas)
-        if "production_data" in data_types:
+
+        if "production" in data_types:
             logger.info("Generating mock production data")
             generate_production_data(db_handler, hours, price_areas, types)
         if "consumption_data" in data_types:
@@ -348,11 +230,12 @@ def generate_mock_database(
             logger.info("Generating mock exchange data")
             generate_exchange_data(db_handler, hours, countries)
         if "cache_metrics" in data_types:
-            logger.info("Generating derived data cache weights (normalized endpoint names)")
+            logger.info("Simulating visits to generate cache_metrics via API endpoints")
             simulate_visits(
-                n=10000,  # or any desired number of visits
-                db_handler=db_handler,
-                run_duration=10  # or adjust as needed
+                n=hours,
+                sleep=0,
+                run_duration=None,
+                stop_event=None
             )
 
         db_handler.commit()

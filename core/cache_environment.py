@@ -1,3 +1,33 @@
+"""
+Cache Metrics and Their Role in RL Model Training
+------------------------------------------------
+
+Each cache metric (feature column) provides the RL agent with information about the query, the endpoint, or the data being considered for caching. Including the right metrics helps the agent learn which items are most valuable to cache, improving hit rates and overall efficiency.
+
+**Common cache metrics and their benefits:**
+
+- `cache_name` (or endpoint): Identifies the API endpoint or resource. Helps the agent learn which endpoints are frequently accessed and should be prioritized for caching.
+- `cache_key`: A unique identifier for the cache entry. Useful for distinguishing between different queries or parameterizations.
+- `hit_ratio`: Indicates how often this item is requested and found in cache. High hit ratios suggest valuable cache candidates.
+- `item_count`: Number of items returned by the query. Larger item counts may be more expensive to recompute, so caching them can save resources.
+- `load_time_ms`: Time taken to load or compute the data. High load times indicate expensive queries, which are good candidates for caching.
+- `size_bytes`: Size of the cached item. Helps the agent balance cache space usage and avoid evicting small, frequently used items in favor of large, rarely used ones.
+- `traffic_intensity`: Frequency or volume of requests for this item. High-traffic items are more beneficial to cache.
+- `policy_triggered`: Indicates if a cache policy (e.g., TTL expiry, manual invalidation) was triggered. Can help the agent learn about cache churn and stability.
+- `rl_action_taken`: Records the RL agent's previous action (cache or not). Useful for learning from past decisions.
+- `timestamp`: When the data was generated or cached. Helps the agent learn about recency and time-based patterns.
+- `in_cache`: Boolean indicating if the item is currently in cache. Useful for tracking cache state.
+- `calculated_priority`: A composite score (possibly from a heuristic or another model) indicating the importance of caching this item.
+
+**How these metrics help:**
+- By providing the RL agent with a rich set of features, it can learn complex patterns (e.g., "cache large, slow-to-compute items that are frequently accessed").
+- Metrics like `hit_ratio`, `traffic_intensity`, and `load_time_ms` directly inform the agent about the value and cost of caching each item.
+- Including endpoint patterns (not just unique URLs) helps the agent generalize and avoid overfitting to specific queries.
+- The agent can learn to balance cache space, computational cost, and user-perceived latency by weighing these features during training.
+
+For best results, select metrics that reflect both the cost of recomputation and the value of fast access for your workload.
+"""
+
 # core/cache_environment.py
 import logging
 from typing import List, Dict, Tuple, Optional

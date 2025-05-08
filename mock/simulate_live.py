@@ -1,99 +1,153 @@
-import hashlib
-import json
+import os
 import random
 import time
 import urllib.parse
 from datetime import datetime, timedelta
-import yaml
-import os
-import requests
 
 import dotenv
+import requests
+import yaml
 
 dotenv.load_dotenv()
 
-API_URL = os.getenv("API_URL", "http://localhost:8080")
+API_URL = os.getenv("API_URL", "http://localhost:8282")
+
 
 # --- Dynamically extract GET endpoints from ers-api.yaml ---
-def extract_api_endpoints(yaml_path):
+def extract_api_endpoints(yaml_path, include_only: list = None):
     with open(yaml_path, "r", encoding="utf-8") as f:
         api_spec = yaml.safe_load(f)
     endpoints = []
     paths = api_spec.get("paths", {})
     for path, methods in paths.items():
         if "get" in methods:
-            endpoints.append(path)
+            if include_only is None or path in include_only:
+                endpoints.append(path)
     return endpoints
 
-# Path to ers-api.yaml (adjust if needed)
+
+# Example usage:
+# To include only /production and /consumption endpoints:
 ERS_API_YAML = os.path.join(os.path.dirname(__file__), "..", "ers-api.yaml")
-API_ENDPOINTS = extract_api_endpoints(ERS_API_YAML)
+API_ENDPOINTS = extract_api_endpoints(ERS_API_YAML,
+                                      include_only=["/production", "/consumption", "/exchange", "/exchange/country",
+                                                    "/production/total", "/consumption/total"])
+# API_ENDPOINTS = extract_api_endpoints(ERS_API_YAML)
+
+# Path to ers-api.yaml (adjust if needed)
 
 PRICE_AREAS = ["DK1", "DK2"]
 PRODUCTION_TYPES = ["WIND", "SOLAR", "HYDRO", "COMMERCIAL_POWER", "CENTRAL_POWER"]
 EXCHANGE_COUNTRIES = ["germany", "greatbritain", "netherlands", "norway", "sweden"]
 
+
 def random_iso_date(start, end):
+    if start > end:
+        start, end = end, start
     delta = end - start
     random_seconds = random.randint(0, int(delta.total_seconds()))
-    return (start + timedelta(seconds=random_seconds)).isoformat()
+    dt = start + timedelta(seconds=random_seconds)
+    # Format as 'YYYY-MM-DDTHH:MM'
+    return dt.strftime("%Y-%m-%dT%H:%M")
+
 
 def generate_params(endpoint):
     now = datetime.utcnow()
-    week_ago = now - timedelta(days=7)
-    month_ago = now - timedelta(days=30)
-    year_ago = now - timedelta(days=365)
-    decade_ago = now - timedelta(days=3650)
-    # Map endpoint to parameter generation logic
+    # Only allow dates from 2020-01-01 to now
+    start_2021 = datetime(2020, 12, 31)
+    end_2024 = datetime(2024, 7, 22)
+
+    def ordered_dates(a, b):
+        """Return (earlier, later) as datetime objects."""
+        return (a, b) if a <= b else (b, a)
+
     if endpoint == "/production":
+        from_date, to_date = ordered_dates(start_2021, end_2024)
+        from_val = random_iso_date(from_date, to_date)
+        to_val = random_iso_date(from_date, to_date)
+        if from_val > to_val:
+            from_val, to_val = to_val, from_val
         return {
-            "from": random_iso_date(decade_ago, now),
-            "to": random_iso_date(month_ago, now),
+            "from": from_val,
+            "to": to_val,
             "priceArea": random.choice(PRICE_AREAS),
             "type": random.choice(PRODUCTION_TYPES)
         }
     elif endpoint == "/production/total":
+        from_date, to_date = ordered_dates(start_2021, end_2024)
+        from_val = random_iso_date(from_date, to_date)
+        to_val = random_iso_date(from_date, to_date)
+        if from_val > to_val:
+            from_val, to_val = to_val, from_val
         return {
-            "from": random_iso_date(decade_ago, now),
-            "to": random_iso_date(week_ago, now),
+            "from": from_val,
+            "to": to_val
         }
     elif endpoint == "/consumption":
+        from_date, to_date = ordered_dates(start_2021, end_2024)
+        from_val = random_iso_date(from_date, to_date)
+        to_val = random_iso_date(from_date, to_date)
+        if from_val > to_val:
+            from_val, to_val = to_val, from_val
         return {
-            "from": random_iso_date(year_ago, now),
-            "to": random_iso_date(week_ago, now),
+            "from": from_val,
+            "to": to_val,
             "priceArea": random.choice(PRICE_AREAS)
         }
     elif endpoint == "/consumption/total":
+        from_date, to_date = ordered_dates(start_2021, end_2024)
+        from_val = random_iso_date(from_date, to_date)
+        to_val = random_iso_date(from_date, to_date)
+        if from_val > to_val:
+            from_val, to_val = to_val, from_val
         return {
-            "from": random_iso_date(decade_ago, now),
-            "to": random_iso_date(year_ago, now),
+            "from": from_val,
+            "to": to_val,
             "priceArea": random.choice(PRICE_AREAS)
         }
     elif endpoint == "/exchange":
+        from_date, to_date = ordered_dates(start_2021, end_2024)
+        from_val = random_iso_date(from_date, to_date)
+        to_val = random_iso_date(from_date, to_date)
+        if from_val > to_val:
+            from_val, to_val = to_val, from_val
         return {
-            "from": random_iso_date(month_ago, now),
-            "to": random_iso_date(week_ago, now),
+            "from": from_val,
+            "to": to_val,
             "priceArea": random.choice(PRICE_AREAS),
         }
     elif endpoint == "/exchange/country":
+        from_date, to_date = ordered_dates(start_2021, end_2024)
+        from_val = random_iso_date(from_date, to_date)
+        to_val = random_iso_date(from_date, to_date)
+        if from_val > to_val:
+            from_val, to_val = to_val, from_val
         return {
-            "from": random_iso_date(decade_ago, now),
-            "to": random_iso_date(decade_ago, now),
+            "from": from_val,
+            "to": to_val,
         }
     else:
         return {}
 
+
 def simulate_visits(
         n=1000,
-        sleep=0,
-        base_url=f"{API_URL}",
+        update_interval=0,
+        api_url=f"{API_URL}",
         run_duration=None,
-        stop_event=None
+        stop_event=None,
 ):
     """
     Simulate random user visits by making HTTP GET requests to API endpoints defined in ers-api.yaml.
     No longer inserts into cache_metrics directly; metrics are generated by the backend as a result of these visits.
+    Commits (saves) after each request if applicable.
     """
+    # Warn if using https:// but the server is not running with SSL
+    if api_url.startswith("https://"):
+        print(
+            "[WARNING] You are using 'https://' in api_url. If your FastAPI/Uvicorn server is not configured for HTTPS/SSL, "
+            "requests will fail with SSL errors. Use 'http://' if your server does not support HTTPS.")
+
     start_time = time.time()
     i = 0
     while (run_duration is None and i < n) or (run_duration is not None and (time.time() - start_time < run_duration)):
@@ -103,19 +157,23 @@ def simulate_visits(
         endpoint = random.choice(API_ENDPOINTS)
         params = generate_params(endpoint)
         query_string = urllib.parse.urlencode(params)
-        url = f"{base_url}{endpoint}"
+        url = f"{api_url}{endpoint}"
         if query_string:
             url = f"{url}?{query_string}"
 
         try:
             response = requests.get(url)
             print(f"[{datetime.now().isoformat()}] GET {url} -> {response.status_code}")
+            # If you have a db_handler, you could commit here after each request
+            # if db_handler is not None:
+            #     db_handler.commit()
+        except requests.exceptions.SSLError as ssl_err:
+            print(f"[{datetime.now().isoformat()}] SSL ERROR requesting {url}: {ssl_err}")
+            print(
+                "This is likely because your server does not support HTTPS. Try using 'http://' instead of 'https://'.")
         except Exception as e:
             print(f"[{datetime.now().isoformat()}] ERROR requesting {url}: {e}")
 
-        if sleep:
-            time.sleep(sleep)
+        if update_interval:
+            time.sleep(update_interval)
         i += 1
-
-if __name__ == "__main__":
-    simulate_visits(n=100, sleep=0.1)

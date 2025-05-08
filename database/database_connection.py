@@ -4,14 +4,13 @@ import random
 import time
 from typing import List, Dict, Optional, Any, Union
 
+import dotenv
 import pandas as pd
 from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
 from core.utils import build_db_url
-
-import dotenv
 
 dotenv.load_dotenv()
 
@@ -275,10 +274,24 @@ def get_database_connection(db_url, max_retries=5, initial_backoff=1, max_backof
             return None
 
 
-def save_best_model_base64(engine, model: str, base64: str, description: str = None, type: str = None,
-                           input_dimension: int = None):
+def save_best_model_base64(
+    engine,
+    model: str,
+    base64: str,
+    description: str = None,
+    type: str = None,
+    input_dimension: int = None,
+    algorithm: str = None,
+    device: str = None,
+    cache_size: int = None,
+    batch_size: int = None,
+    learning_rate: float = None,
+    timesteps: int = None,
+    feature_columns: list = None,
+    trained_at: str = None
+):
     """
-    Insert a base64‐encoded model into the rl_models table, including input_dimension.
+    Insert a base64‐encoded model into the rl_models table, including input_dimension and extended metadata.
     """
     import json
     import logging
@@ -291,9 +304,35 @@ def save_best_model_base64(engine, model: str, base64: str, description: str = N
     logger.info(f"Model base64 length: {len(base64)}")
     logger.info(f"Input dimension: {input_dimension}")
 
-    # Ensure description is a string (JSON if dict)
+    # Build extended description as JSON
     if isinstance(description, dict):
-        description = json.dumps(description)
+        desc_dict = description
+    else:
+        try:
+            desc_dict = json.loads(description) if description else {}
+        except Exception:
+            desc_dict = {}
+
+    # Add extra metadata if provided
+    if algorithm:
+        desc_dict["algorithm"] = algorithm
+    if device:
+        desc_dict["device"] = device
+    if cache_size is not None:
+        desc_dict["cache_size"] = cache_size
+    if batch_size is not None:
+        desc_dict["batch_size"] = batch_size
+    if learning_rate is not None:
+        desc_dict["learning_rate"] = learning_rate
+    if timesteps is not None:
+        desc_dict["timesteps"] = timesteps
+    if feature_columns is not None:
+        desc_dict["feature_columns"] = feature_columns
+    if trained_at:
+        desc_dict["trained_at"] = trained_at
+
+    description_json = json.dumps(desc_dict)
+
     if isinstance(type, dict):
         type = json.dumps(type)
 
@@ -310,7 +349,7 @@ def save_best_model_base64(engine, model: str, base64: str, description: str = N
                 {
                     "model": model,
                     "base64": base64,
-                    "description": description,
+                    "description": description_json,
                     "type": type,
                     "input_dimension": input_dimension,
                 }

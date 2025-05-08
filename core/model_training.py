@@ -602,4 +602,3 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             return evaluate_cache_model(model_path, eval_steps, db_url, use_gpu=False, table_name=table_name)
 
         return {"error": str(e), "success": False}
-

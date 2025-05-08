@@ -1,217 +1,153 @@
-I'll add a section about seeding the database to the README:
 
-# Energy Data Cache Optimization using Reinforcement Learning
+# ERS-ML-Trainer: Reinforcement Learning for Smart Caching
 
-This project uses reinforcement learning to optimize database caching strategies for energy data queries. By training
-models to predict which data should be kept in cache, it improves query performance and reduces database load.
+## Overview
+
+ERS-ML-Trainer is a Python-based system for training, evaluating, and deploying reinforcement learning (RL) models to optimize caching strategies for API/database queries. It supports dynamic feature selection, model export, and integration with real or simulated data sources.
 
 ## Features
 
-- **Reinforcement Learning Cache Optimization**
-    - Support for multiple algorithms (DQN, A2C, PPO)
-    - Smart data importance evaluation based on renewable energy ratio
-    - Adaptive caching based on data volatility and complexity metrics
+- **Dynamic Feature Selection:** Automatically discovers and uses available columns from the `cache_metrics` table.
+- **RL Algorithms:** Supports DQN, PPO, and A2C for cache policy learning.
+- **API-Driven:** FastAPI endpoints for training, evaluation, model export, and job management.
+- **Model Export:** Exports trained models as TorchScript (`policy.pt`) for easy integration with Java or other consumers.
+- **Mock & Simulation:** Tools for generating realistic cache metrics and simulating API traffic.
+- **Database Support:** Works with MySQL, MariaDB, PostgreSQL, and SQLite.
+- **Extensible:** Easily add new features, endpoints, or reward strategies.
 
-- **GPU-Accelerated Training**
-    - CUDA/GPU support for faster model training
-    - Automatic GPU detection and optimization
-    - Configurable for multi-GPU environments
+## Architecture
 
-- **REST API Service**
-    - Model training and evaluation endpoints
-    - Async job management for long-running training tasks
-    - Performance visualization
+```
++-------------------+      +---------------------+      +----------------------+
+|   API (FastAPI)   | <--> |   RL Trainer Core   | <--> |   Database (SQL)     |
++-------------------+      +---------------------+      +----------------------+
+        |                        |                               |
+        v                        v                               v
++-------------------+      +---------------------+      +----------------------+
+|   Mock/Simulator  |      |   Model Export      |      |   Model Registry     |
++-------------------+      +---------------------+      +----------------------+
+```
 
-- **Database Integration**
-    - Support for MariaDB/MySQL
-    - Mock energy database generation for testing
-    - Intelligent query caching
+## Getting Started
 
-## Requirements
+### Prerequisites
 
-- Python 3.11+
-- CUDA-compatible GPU (optional, for accelerated training)
-- Docker and Docker Compose (for containerized deployment)
+- Python 3.8+
+- pip
+- MySQL/MariaDB/PostgreSQL/SQLite (for persistent storage)
+- (Optional) CUDA GPU for accelerated training
 
-## Installation
-
-### Using Docker (recommended)
+### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/sdu-f25-mjm/ers-ml-trainer.git
+git clone https://github.com/your-org/ers-ml-trainer.git
 cd ers-ml-trainer
-
-# Start with GPU support (if available)
-GPU_COUNT=1 docker-compose -f docker/docker-compose.yml up -d
-
-# Or without GPU
-docker-compose -f docker/docker-compose.yml up -d
-```
-
-### Manual Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/sdu-f25-mjm/ers-ml-trainer.git
-cd ers-ml-trainer
-
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -e .
-```
-
-## Usage
-
-### API Endpoints
-
-Start the API server:
-
-```bash
-python -m main --host 0.0.0.0 --port 8000
-```
-
-The API will be available at http://localhost:8000 with Swagger UI documentation.
-
-### Training a Model via API
-
-```bash
-curl -X POST "http://localhost:8000/train" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "db_url": "mysql+mysqlconnector://cacheuser:cachepass@ers-mariadb:3306/cache_db",
-    "algorithm": "dqn",
-    "cache_size": 10,
-    "max_queries": 500,
-    "timesteps": 10000,
-    "use_gpu": true
-  }'
-```
-
-### Evaluating a Model
-
-```bash
-curl -X POST "http://localhost:8000/evaluate/{job_id}?steps=1000"
-```
-
-## Configuration
-
-You can modify the following parameters:
-
-- **Algorithm**: `dqn` (default), `a2c`, or `ppo`
-- **Cache Size**: Number of items to keep in cache
-- **Timesteps**: Training duration
-- **Feature Columns**: Data fields to use for cache decisions
-- **GPU Usage**: Enable/disable GPU acceleration
-
-# Build and Run Commands for ERS ML Trainer
-
-## Docker Deployment
-
-### CPU Build & Run
-
-```bash
-# Build the CPU image
-docker build -f docker/Dockerfile.cpu -t ers-ml-trainer:cpu .
-```
-
-```bash
-# Run using docker-compose (CPU)
-docker-compose -f docker/docker-compose.yml up -d
-```
-
-### GPU Build & Run
-
-```bash
-# Build the GPU image
-docker build -f docker/Dockerfile.gpu -t ers-ml-trainer:gpu .
-```
-
-```bash
-# Run with GPU support (specify number of GPUs)
-docker compose -f docker/docker-compose.yml up -d
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+pip install -r requirements.txt
 ```
 
 ### Database Setup
 
-```bash
-# Generate mock database data
-docker-compose -f docker/docker-compose.yml exec ers-ml-trainer python -m mock.mock_db
-```
+1. Edit `database/01_create_tables.sql` and `database/02_seed_tables.sql` as needed.
+2. Run the SQL scripts to create and seed your database, or let the app create tables on startup.
 
-## Manual Deployment
+### Configuration
 
-```bash
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -e .
-
-# Start API server
-python -m main --host 0.0.0.0 --port 8000
-
-# With hot reload (for development)
-python -m main --reload
-```
-
-## API Usage
-
-# Evaluate a model
-
-curl -X POST "http://localhost:8000/evaluate/{job_id}?steps=1000"
-
-# Export model to TorchScript
-
-curl -X POST "http://localhost:8000/export/{job_id}"
-
-# View logs
-
-curl "http://localhost:8000/logs?lines=100&level=ERROR"
+Edit environment variables or `.env` file for database connection settings:
 
 ```
+DB_DRIVER=mysql+mysqlconnector
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=cacheuser
+DB_PASSWORD=cachepass
+DB_NAME=cache_db
+```
 
-## Database Seeding
-
-The project includes a database seeding tool to generate realistic energy data for testing and development purposes.
-
-### Using the Mock Database Generator
+### Running the API
 
 ```bash
-# Using Docker (recommended)
-docker-compose -f docker/docker-compose.yml exec ers-ml-trainer python -m mock.mock_db
-
-# From local environment
-python -m mock.mock_db
+uvicorn api.app:app --reload
 ```
 
-The mock generator creates the following tables:
+The API will be available at [http://localhost:8000](http://localhost:8000).
 
-- `energy_data`: Primary energy production and consumption metrics
-- `production_data`: Detailed breakdown of energy production sources
-- `consumption_data`: Detailed consumption patterns by sector
-- `exchange_data`: Cross-border energy exchange metrics
-- `carbon_intensity`: Carbon intensity and energy mix percentages
+### Training a Model
 
-Each table contains hourly time series data structured according to energy market standards.
-
-## Development
+Send a POST request to `/train` with your desired parameters. Example:
 
 ```bash
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Start API server with auto-reload
-python -m main --reload
+curl -X POST "http://localhost:8000/train?algorithm=dqn&cache_size=10&timesteps=100000"
 ```
+
+Monitor job status via `/jobs/{job_id}`.
+
+### Exporting a Model
+
+After training completes, export the model for deployment:
+
+```bash
+curl -X POST "http://localhost:8000/export/{job_id}?output_dir=best_model"
+```
+
+The exported model (`policy.pt`) and metadata will be in the specified directory.
+
+### Simulating Traffic
+
+Use the simulator to generate realistic API traffic:
+
+```bash
+python mock/simulate_live.py --api_url http://localhost:8000 --n 10000
+```
+
+### Mock Data Generation
+
+Generate mock cache metrics for testing:
+
+```bash
+python mock/mock_db.py --db_type mysql --host localhost --user cacheuser --password cachepass --database cache_db
+```
+
+## Key Components
+
+- **api/app.py:** FastAPI endpoints for training, evaluation, export, and job management.
+- **core/model_training.py:** RL training and evaluation logic.
+- **core/cache_environment.py:** Custom OpenAI Gym environment for cache simulation.
+- **database/database_connection.py:** Database utilities and table creation.
+- **mock/simulate_live.py:** Simulates API traffic for realistic cache metrics.
+- **mock/mock_db.py:** Generates mock data for testing and development.
+
+## Customization
+
+- **Feature Columns:** The system can dynamically select features from `cache_metrics`. You can specify custom columns via the API.
+- **Cache Weights:** Apply custom weights to features to prioritize certain metrics during training.
+- **Endpoints:** Update `ers-api.yaml` to reflect your API structure; the simulator will use this to generate traffic.
+
+## Best Practices
+
+- Use normalized endpoint names (without timestamps) as cache keys for better generalization.
+- Align your feature columns in both training and production for consistent model performance.
+- Monitor cache hit ratios, load times, and other metrics to evaluate RL policy effectiveness.
+
+## Troubleshooting
+
+- **Shape Mismatch:** Ensure the number and order of features in your input match the model's `feature_columns` (see metadata).
+- **Database Errors:** Check that all required tables exist and columns match the schema in `database/01_create_tables.sql`.
+- **SSL Errors in Simulation:** Use `http://` if your API server does not support HTTPS.
 
 ## License
 
-[MIT License](LICENSE)
+MIT License
+
+## Contributors
+
+- [Your Name]
+- [Other Contributors]
+
+## Acknowledgements
+
+- [Stable Baselines3](https://github.com/DLR-RM/stable-baselines3)
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [OpenAI Gym](https://www.gymlibrary.dev/)
+
