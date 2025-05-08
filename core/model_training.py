@@ -578,7 +578,14 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             for i in range(len(hit_history))
         ]
 
-        # Return evaluation metrics, now with reasoning and in_cache
+        # --- Add diagnostics for visualization ---
+        # These are placeholders; replace with real values if you log them during training/evaluation
+        episode_rewards = [sum(rewards)] if rewards else []
+        losses = []
+        q_values_history = []
+        entropies = []
+
+        # Return evaluation metrics, now with reasoning and in_cache and diagnostics
         return {
             'hit_rates': saved_hit_rates,
             'hit_history': hit_history,
@@ -589,9 +596,14 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             'avg_inference_time_ms': sum(inference_times) / len(inference_times),
             'evaluation_time_seconds': eval_time,
             'device_used': device,
-            'step_reasoning': step_reasoning,  # New
-            'in_cache': in_cache,  # New
-            'urls_hit': urls_hit  # Add this line to include URLs seen in evaluation
+            'step_reasoning': step_reasoning,
+            'in_cache': in_cache,
+            'urls_hit': urls_hit,
+            # Diagnostics for visualization
+            'episode_rewards': episode_rewards,
+            'losses': losses,
+            'q_values_history': q_values_history,
+            'entropies': entropies
         }
     except Exception as e:
         logger.error(f"Model evaluation failed: {e}")

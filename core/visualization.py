@@ -10,7 +10,7 @@ import threading
 
 
 def visualize_cache_performance(evaluation_results, output_dir="cache_eval_results"):
-    """Generate visualizations of cache performance metrics"""
+    """Generate visualizations of cache performance metrics and other learning diagnostics"""
     logger = logging.getLogger(__name__)
 
     # Create output directory
@@ -110,60 +110,95 @@ def visualize_cache_performance(evaluation_results, output_dir="cache_eval_resul
 
     logger.info(f"Cache visualization saved to {filepath}")
 
-    # --- NEW: Visualize Q-value estimation if available ---
-    q_values_plot_path = None
+    plot_paths = {"performance_plot": filepath}
+
+    # --- Visualize Q-value estimation if available ---
     q_values_history = evaluation_results.get('q_values_history')
     game_name = evaluation_results.get('game_name', 'Unknown')
-    if q_values_history is not None:
+    if q_values_history is not None and len(q_values_history) > 0:
         try:
             q_values_plot_path = visualize_double_dqn_value_estimation(
                 q_values_history, game_name=game_name, output_dir=output_dir
             )
             if q_values_plot_path:
                 logger.info(f"Q-value estimation plot saved to {q_values_plot_path}")
+                plot_paths["q_values_plot"] = q_values_plot_path
         except Exception as e:
             logger.warning(f"Failed to visualize Q-value estimation: {e}")
+    else:
+        logger.info("No Q-value history available for Q-value plot.")
 
-    # Return both plot paths if Q-values plot was generated
-    if q_values_plot_path:
-        return {"performance_plot": filepath, "q_values_plot": q_values_plot_path}
-    return filepath
+    # --- Plot rewards over episodes if available ---
+    episode_rewards = evaluation_results.get('episode_rewards')
+    rewards_plot_path = None
+    if episode_rewards is not None and len(episode_rewards) > 0:
+        try:
+            rewards_plot_path = plot_rewards_over_episodes(
+                episode_rewards, output_dir=output_dir
+            )
+            plot_paths["episode_rewards_plot"] = rewards_plot_path
+            logger.info(f"Episode rewards plot saved to {rewards_plot_path}")
+        except Exception as e:
+            logger.warning(f"Failed to plot rewards over episodes: {e}")
+    else:
+        logger.info("No episode rewards available for episode rewards plot.")
+
+    # --- Plot learning diagnostics if available ---
+    try:
+        diagnostics_paths = plot_learning_diagnostics(
+            evaluation_results,
+            output_dir=output_dir,
+            title_prefix="Learning Diagnostics",
+            episode_rewards_plot_path=rewards_plot_path  # Pass the already generated plot path
+        )
+        if diagnostics_paths:
+            logger.info(f"Learning diagnostics plots saved: {diagnostics_paths}")
+        plot_paths.update(diagnostics_paths)
+    except Exception as e:
+        logger.warning(f"Failed to plot learning diagnostics: {e}")
+
+    return plot_paths
 
 
-def visualize_double_dqn_value_estimation(q_values_history, game_name="Unknown", output_dir="dqn_value_vis"):
+def visualize_double_dqn_value_estimation(q_values_history, game_name="Unknown", output_dir="cache_eval_results"):
     """
-    Visualize value estimation (Q-values) over time for Double DQN on Atari games.
+    Visualize Double DQN Q-value estimation statistics (mean, max, min) over time.
+
     Args:
-        q_values_history: List of lists/arrays of Q-values per step (shape: [steps, actions])
-        game_name: Name of the Atari game (e.g., 'Alien', 'Space Invaders', etc.)
-        output_dir: Directory to save the plot
+        q_values_history: list of lists or 2D np.ndarray, shape (steps, actions)
+        game_name: str, name of the game or experiment
+        output_dir: directory to save the plot
+
+    Returns:
+        Path to the saved plot image.
     """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import os
+    from datetime import datetime
+    import logging
+
     logger = logging.getLogger(__name__)
     os.makedirs(output_dir, exist_ok=True)
 
-    q_values_history = np.array(q_values_history)  # shape: [steps, actions]
-    if q_values_history.ndim != 2 or q_values_history.shape[0] == 0:
-        logger.warning("q_values_history must be a 2D array with shape [steps, actions] and nonzero steps.")
-        return None
-
+    q_values_history = np.array(q_values_history)
     steps = np.arange(q_values_history.shape[0])
 
-    plt.figure(figsize=(12, 6))
-    for action in range(q_values_history.shape[1]):
-        plt.plot(steps, q_values_history[:, action], label=f"Action {action}")
-
-    plt.title(f"Double DQN Value Estimation - {game_name}")
+    plt.figure(figsize=(10, 5))
+    plt.plot(steps, np.mean(q_values_history, axis=1), label="Mean Q-value")
+    plt.plot(steps, np.max(q_values_history, axis=1), label="Max Q-value", linestyle='--')
+    plt.plot(steps, np.min(q_values_history, axis=1), label="Min Q-value", linestyle=':')
     plt.xlabel("Step")
-    plt.ylabel("Estimated Q-Value")
+    plt.ylabel("Q-value")
+    plt.title(f"Double DQN Q-value Estimation: {game_name}")
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
-    plt.tight_layout()
 
-    filename = f"dqn_value_{game_name.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    filename = f"double_dqn_q_values_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
     filepath = os.path.join(output_dir, filename)
     plt.savefig(filepath, dpi=100)
     plt.close()
-    logger.info(f"Double DQN value estimation visualization saved to {filepath}")
+    logger.info(f"Double DQN Q-value estimation plot saved to {filepath}")
     return filepath
 
 
@@ -194,62 +229,86 @@ def plot_rewards_over_episodes(episode_rewards, output_dir="cache_eval_results",
     return filepath
 
 
-class RealTimeTrainingPlotter:
+def plot_learning_diagnostics(
+    training_history,
+    output_dir="cache_eval_results",
+    title_prefix="Learning Diagnostics",
+    episode_rewards_plot_path=None
+):
     """
-    Real-time plotter for RL training metrics (e.g., hit rate, reward).
-    Call .update(step, hit_rate, reward) from your training loop.
-
-    Usage Example:
-    --------------
-    from core.visualization import RealTimeTrainingPlotter
-
-    plotter = RealTimeTrainingPlotter()
-    plotter.start()
-
-    for step in range(total_steps):
-        # ... RL training logic ...
-        plotter.update(step, current_hit_rate, current_reward)
-
-    plotter.stop()
+    Plot additional diagnostics for the learning process if data is available.
+    Args:
+        training_history: dict with optional keys: 'losses', 'q_values_history', 'entropies', 'episode_rewards'
+        output_dir: directory to save plots
+        title_prefix: prefix for plot titles
+        episode_rewards_plot_path: if provided, use this path instead of generating a new plot
+    Returns:
+        Dict of plot file paths
     """
-    def __init__(self, title="RL Training Progress", interval=500):
-        self.hit_rates = []
-        self.rewards = []
-        self.steps = []
-        self.lock = threading.Lock()
-        self.fig, self.ax = plt.subplots(2, 1, figsize=(10, 8))
-        self.ani = animation.FuncAnimation(
-            self.fig, self._animate, interval=interval, blit=False
-        )
-        self.fig.suptitle(title)
-        self._running = False
+    logger = logging.getLogger(__name__)
+    os.makedirs(output_dir, exist_ok=True)
+    plot_paths = {}
 
-    def start(self):
-        self._running = True
-        threading.Thread(target=plt.show, daemon=True).start()
+    # Plot loss curve if available
+    losses = training_history.get('losses')
+    if losses is not None and len(losses) > 0:
+        plt.figure(figsize=(10, 4))
+        plt.plot(losses, label="Loss")
+        plt.xlabel("Training Step")
+        plt.ylabel("Loss")
+        plt.title(f"{title_prefix}: Loss Curve")
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend()
+        loss_path = os.path.join(output_dir, f"loss_curve_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+        plt.savefig(loss_path, dpi=100)
+        plt.close()
+        plot_paths['loss_curve'] = loss_path
+        logger.info(f"Loss curve plot saved to {loss_path}")
 
-    def stop(self):
-        self._running = False
-        plt.close(self.fig)
+    # Plot Q-value statistics if available
+    q_values_history = training_history.get('q_values_history')
+    if q_values_history is not None and len(q_values_history) > 0:
+        q_values_history = np.array(q_values_history)
+        steps = np.arange(q_values_history.shape[0])
+        plt.figure(figsize=(10, 4))
+        plt.plot(steps, np.mean(q_values_history, axis=1), label="Mean Q-value")
+        plt.plot(steps, np.max(q_values_history, axis=1), label="Max Q-value", linestyle='--')
+        plt.plot(steps, np.min(q_values_history, axis=1), label="Min Q-value", linestyle=':')
+        plt.xlabel("Step")
+        plt.ylabel("Q-value")
+        plt.title(f"{title_prefix}: Q-value Statistics")
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
+        qval_path = os.path.join(output_dir, f"q_value_stats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+        plt.savefig(qval_path, dpi=100)
+        plt.close()
+        plot_paths['q_value_stats'] = qval_path
+        logger.info(f"Q-value statistics plot saved to {qval_path}")
 
-    def update(self, step, hit_rate, reward):
-        with self.lock:
-            self.steps.append(step)
-            self.hit_rates.append(hit_rate)
-            self.rewards.append(reward)
+    # Plot policy entropy if available
+    entropies = training_history.get('entropies')
+    if entropies is not None and len(entropies) > 0:
+        plt.figure(figsize=(10, 4))
+        plt.plot(entropies, label="Policy Entropy")
+        plt.xlabel("Training Step")
+        plt.ylabel("Entropy")
+        plt.title(f"{title_prefix}: Policy Entropy")
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend()
+        entropy_path = os.path.join(output_dir, f"policy_entropy_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+        plt.savefig(entropy_path, dpi=100)
+        plt.close()
+        plot_paths['policy_entropy'] = entropy_path
+        logger.info(f"Policy entropy plot saved to {entropy_path}")
 
-    def _animate(self, frame):
-        with self.lock:
-            self.ax[0].clear()
-            self.ax[1].clear()
-            self.ax[0].plot(self.steps, self.hit_rates, label="Hit Rate", color="blue")
-            self.ax[0].set_ylabel("Hit Rate")
-            self.ax[0].set_xlabel("Step")
-            self.ax[0].legend()
-            self.ax[0].grid(True, linestyle='--', alpha=0.7)
-            self.ax[1].plot(self.steps, self.rewards, label="Reward", color="green")
-            self.ax[1].set_ylabel("Reward")
-            self.ax[1].set_xlabel("Step")
-            self.ax[1].legend()
-            self.ax[1].grid(True, linestyle='--', alpha=0.7)
-        return self.ax
+    # Plot episode rewards if available and not already plotted
+    episode_rewards = training_history.get('episode_rewards')
+    if episode_rewards is not None and len(episode_rewards) > 0:
+        if episode_rewards_plot_path:
+            plot_paths['episode_rewards'] = episode_rewards_plot_path
+        else:
+            plot_paths['episode_rewards'] = plot_rewards_over_episodes(
+                episode_rewards, output_dir=output_dir, title=f"{title_prefix}: Rewards Over Episodes"
+            )
+
+    return plot_paths

@@ -1,6 +1,11 @@
 # core/utils.py
-import logging
 import os
+
+# Ensure logs directory exists before setting up logging
+log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+os.makedirs(log_dir, exist_ok=True)
+
+import logging
 import subprocess
 
 import psutil
@@ -9,7 +14,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("logs/application.log"),
+        logging.FileHandler(os.path.join(log_dir, "application.log")),
         logging.StreamHandler()
     ]
 )

@@ -1,4 +1,3 @@
-
 # ERS-ML-Trainer: Reinforcement Learning for Smart Caching
 
 ## Overview
@@ -109,6 +108,32 @@ Generate mock cache metrics for testing:
 python mock/mock_db.py --db_type mysql --host localhost --user cacheuser --password cachepass --database cache_db
 ```
 
+## Docker Build & Run
+
+You can build and run ERS-ML-Trainer using Docker for both CPU and GPU environments.
+
+### CPU Version
+
+```bash
+docker build -t ers-ml-trainer:cpu -f docker/Dockerfile.cpu .
+```
+```bash
+docker run --rm -p 8000:8000 --env-file .env ers-ml-trainer:cpu
+```
+
+### GPU Version (NVIDIA CUDA)
+
+Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+
+```bash
+docker build -t ers-ml-trainer:gpu -f docker/Dockerfile.gpu .
+```
+```bash
+docker run --rm --gpus all -p 8000:8000 --env-file .env ers-ml-trainer:gpu
+```
+
+> **Note:** Adjust `--env-file` or environment variables as needed for your database and configuration.
+
 ## Key Components
 
 - **api/app.py:** FastAPI endpoints for training, evaluation, export, and job management.
@@ -150,8 +175,6 @@ MIT License
 - [Stable Baselines3](https://github.com/DLR-RM/stable-baselines3)
 - [FastAPI](https://fastapi.tiangolo.com/)
 - [OpenAI Gym](https://www.gymlibrary.dev/)
-
-
 
 # System Overview: How the RL Caching Pipeline Works
 
@@ -221,3 +244,4 @@ MIT License
 8. **Repeat** as you gather more data or want to tune your cache policy.
 
 ---
+`

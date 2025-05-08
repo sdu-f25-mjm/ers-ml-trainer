@@ -181,7 +181,7 @@ async def start_training(
             description="Batch size for each training update"
         ),
         learning_rate: Optional[float] = Query(
-            None,
+            "0.0001",
             description="Learning rate for the RL optimizer"
         )
 
@@ -262,8 +262,6 @@ async def evaluate_model(model_id: str, steps: int = 1000, use_gpu: bool = False
     if not model["model_path"]:
         raise HTTPException(status_code=400, detail=f"No model path found for model {model_id}")
 
-    # Dynamically import the correct evaluation function based on use_gpu and availability.
-
     results = evaluate_cache_model(
         model_path=model["model_path"],
         eval_steps=steps,
@@ -272,9 +270,9 @@ async def evaluate_model(model_id: str, steps: int = 1000, use_gpu: bool = False
     )
 
     try:
-        vis_path = visualize_cache_performance(results)
-        if vis_path:
-            results["visualization"] = vis_path
+        vis_paths = visualize_cache_performance(results)
+        if vis_paths:
+            results["visualizations"] = vis_paths
     except Exception as e:
         results["visualization_error"] = str(e)
 
@@ -673,4 +671,3 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
-
