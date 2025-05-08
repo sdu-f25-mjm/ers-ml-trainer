@@ -45,9 +45,13 @@ app = FastAPI(
     openapi_tags=[
         {"name": "database",
          "description": "Endpoints for database schema inspection, seeding, and feature discovery."},
-        {"name": "Reinforcement Learning", "description": "Endpoints for starting and managing RL model training jobs."},
-        {"name": "Simulation", "description": "Endpoints for running and managing cache metric simulations."},
-        {"name": "Monitoring", "description": "Endpoints for monitoring logs and application health."}
+        {"name": "training", "description": "Endpoints for starting and managing RL model training jobs."},
+        {"name": "models", "description": "Endpoints for querying and listing trained models."},
+        {"name": "evaluation", "description": "Endpoints for evaluating trained RL models."},
+        {"name": "deployment", "description": "Endpoints for exporting and deploying trained models."},
+        {"name": "simulation", "description": "Endpoints for running and managing cache metric simulations."},
+        {"name": "cache", "description": "Endpoints for cache weights and cache-related utilities."},
+        {"name": "monitoring", "description": "Endpoints for monitoring logs and application health."}
     ]
 )
 running_simulations = {}
@@ -103,7 +107,7 @@ def feature_columns_enum(
     return {"feature_columns_enum": [e.value for e in FeatureColumnsEnum]}
 
 
-@app.post("/train", response_model=TrainingResponse, tags=["Reinforcement Learning"],
+@app.post("/train", response_model=TrainingResponse, tags=["training"],
           description="Start a new RL model training job for cache optimization")
 async def start_training(
         background_tasks: BackgroundTasks,
@@ -237,19 +241,19 @@ async def start_training(
     }
 
 
-@app.get("/models/{model_id}", response_model=modelStatus, tags=["Reinforcement Learning"],
+@app.get("/models/{model_id}", response_model=modelStatus, tags=["models"],
          description="Get the status and details of a specific training model")
 async def get_model(model_id: str):
     return get_status(model_id)
 
 
-@app.get("/models", response_model=List[modelStatus], tags=["Reinforcement Learning"],
+@app.get("/models", response_model=List[modelStatus], tags=["models"],
          description="List all training models and their statuses")
 async def list_models():
     return list(training_models.values())
 
 
-@app.post("/evaluate/{model_id}", response_model=Dict[str, Any], tags=["Reinforcement Learning"],
+@app.post("/evaluate/{model_id}", response_model=Dict[str, Any], tags=["evaluation"],
           description="Evaluate a trained RL model and return performance metrics")
 async def evaluate_model(model_id: str, steps: int = 1000, use_gpu: bool = False):
     model = get_status(model_id)
@@ -277,7 +281,7 @@ async def evaluate_model(model_id: str, steps: int = 1000, use_gpu: bool = False
     return results
 
 
-@app.post("/export/{model_id}", response_model=Dict[str, Any], tags=["Reinforcement Learning"],
+@app.post("/export/{model_id}", response_model=Dict[str, Any], tags=["deployment"],
           description="Export a trained model as TorchScript and save to database")
 async def export_model(model_id: str, output_dir: str = "best_model"):
     model = get_status(model_id)
@@ -538,7 +542,7 @@ async def get_simulation_status(simulation_id: str):
     }
 
 
-@app.get("/cache/derived/weights", response_model=Dict[str, Any], tags=["Reinforcement Learning"],
+@app.get("/cache/derived/weights", response_model=Dict[str, Any], tags=["cache"],
          description="Get current cache weights for derived data, optionally filtered by endpoint")
 async def get_derived_data_weights(
         host: str = Query(DB_HOST, description="Database hostname"),

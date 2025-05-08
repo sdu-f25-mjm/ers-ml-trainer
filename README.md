@@ -151,3 +151,73 @@ MIT License
 - [FastAPI](https://fastapi.tiangolo.com/)
 - [OpenAI Gym](https://www.gymlibrary.dev/)
 
+
+
+# System Overview: How the RL Caching Pipeline Works
+
+## 1. Data & Simulation
+
+- **Database Tables:** The system expects a database (e.g., MySQL/MariaDB) with tables like `cache_metrics` and others for energy/production data.
+- **Mock Data:** You can generate mock data using `mock/mock_db.py` or simulate realistic API traffic with `mock/simulate_live.py`. The latter sends real HTTP requests to your API endpoints, and the backend records cache metrics as a result.
+- **Feature Columns:** The RL agent uses columns from `cache_metrics` (like `cache_name`, `hit_ratio`, `load_time_ms`, etc.) as features for learning.
+
+## 2. API Layer
+
+- **FastAPI App:** The API (in `api/app.py`) exposes endpoints for:
+  - Training RL models (`/train`)
+  - Evaluating models (`/evaluate/{model_id}`)
+  - Exporting models (`/export/{model_id}`)
+  - Seeding/simulating data (`/db/seed`, `/simulation/start`)
+  - Monitoring and logs
+- **Dynamic Feature Discovery:** Endpoints like `/available-columns` and `/feature-columns-enum` let you inspect which columns are available for training.
+
+## 3. RL Training
+
+- **Environment:** `core/cache_environment.py` defines a Gymnasium environment that simulates a cache. The agent observes features of each query and the cache state, and decides whether to cache the result.
+- **Training:** The `/train` endpoint launches a background job that:
+  - Loads data from the database.
+  - Builds the RL environment with selected features and cache size.
+  - Trains a model (DQN, PPO, or A2C) for a specified number of timesteps.
+  - Saves the model and metadata (algorithm, features, cache size, etc.).
+- **Custom Weights:** You can specify `cache_weights` to prioritize certain metrics in the reward calculation.
+
+## 4. Model Evaluation
+
+- **Evaluation:** The `/evaluate/{model_id}` endpoint runs the trained model in the environment, tracking hit rates, rewards, and step-by-step reasoning (including which URLs are hit).
+- **Visualization:** Results are visualized (see `core/visualization.py`) with plots of hit/miss patterns, rewards, and even real-time training progress using `RealTimeTrainingPlotter`.
+
+## 5. Model Export & Registry
+
+- **Export:** The `/export/{model_id}` endpoint converts the trained model to TorchScript (`policy.pt`) and saves it (and its metadata) to disk and the `rl_models` table in the database, including all relevant training parameters.
+- **Metadata:** All important info (algorithm, device, cache size, feature columns, etc.) is stored with the model for reproducibility and downstream use.
+
+## 6. Integration & Inference
+
+- **Deployment:** The exported `policy.pt` can be loaded in production systems (e.g., Java with DJL) for real-time cache decision-making.
+- **Feature Alignment:** The input features provided to the model at inference time **must match** the `feature_columns` used during training (see metadata).
+
+## 7. Monitoring & Simulation
+
+- **Simulation:** You can run live simulations to generate realistic cache metrics, which are then used for RL training.
+- **Monitoring:** The API provides endpoints for checking job status, simulation status, and retrieving logs.
+
+## 8. Extensibility
+
+- **Add Features:** You can add new metrics to `cache_metrics` and use them as features.
+- **Custom Rewards:** Adjust the reward logic in `core/cache_environment.py` to reflect your caching goals.
+- **New Algorithms:** Add new RL algorithms by extending the training logic.
+
+---
+
+## Typical Workflow
+
+1. **Seed or simulate data** in your database.
+2. **Inspect available features** via the API.
+3. **Start a training job** with your chosen algorithm, cache size, and features.
+4. **Monitor training progress** and visualize results.
+5. **Evaluate the trained model** to check performance.
+6. **Export the model** for deployment.
+7. **Integrate the exported model** into your production cache pipeline, ensuring feature alignment.
+8. **Repeat** as you gather more data or want to tune your cache policy.
+
+---
