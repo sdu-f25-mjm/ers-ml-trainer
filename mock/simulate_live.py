@@ -8,7 +8,7 @@ import dotenv
 import requests
 import yaml
 
-from config import API_URL
+from config import API_URL,LIST_OF_ENDPOINTS
 
 dotenv.load_dotenv()
 
@@ -31,9 +31,7 @@ def extract_api_endpoints(yaml_path, include_only: list = None):
 # Example usage:
 # To include only /production and /consumption endpoints:
 ERS_API_YAML = os.path.join(os.path.dirname(__file__), "..", "ers-api.yaml")
-API_ENDPOINTS = extract_api_endpoints(ERS_API_YAML,
-                                      include_only=["/production", "/consumption", "/exchange", "/exchange/country",
-                                                    "/production/total", "/consumption/total"])
+API_ENDPOINTS = extract_api_endpoints(ERS_API_YAML,include_only=["/exchange/country","/production/total","/consumption/total"])
 # API_ENDPOINTS = extract_api_endpoints(ERS_API_YAML)
 
 # Path to ers-api.yaml (adjust if needed)

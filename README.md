@@ -126,7 +126,7 @@ docker run --rm -p 8000:8000 --env-file .env ers-ml-trainer:cpu
 Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
 
 ```bash
-docker build -t ers-ml-trainer:gpu -f docker/Dockerfile.gpu .
+docker build -t ers-ml-trainer:gpu -f Dockerfile.gpu .
 ```
 ```bash
 docker run --rm --gpus all -p 8000:8000 --env-file .env ers-ml-trainer:gpu

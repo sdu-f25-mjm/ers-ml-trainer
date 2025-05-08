@@ -182,10 +182,13 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
         logger.info(f"Loading model {model_path} to CPU for export")
         if "ppo" in model_path.lower():
             model = PPO.load(model_path, device="cpu")
+            model_type = "ppo"
         elif "a2c" in model_path.lower():
             model = A2C.load(model_path, device="cpu")
+            model_type = "a2c"
         else:
             model = DQN.load(model_path, device="cpu")
+            model_type = "dqn"
 
         # Set to evaluation mode
         model.policy.set_training_mode(False)
@@ -217,7 +220,8 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
                 "observation_space_shape": [int(x) for x in model.observation_space.shape],
                 "action_space_size": int(model.action_space.n),
                 "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "device": "cpu"
+                "device": "cpu",
+                "model_type": model_type
             }, f, indent=2)
 
         logger.info(f"Model successfully exported to {output_path}")
@@ -228,9 +232,9 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
         raise
 
 
-def save_best_model(model, model_name, conn, description=None):
+def save_best_model(model, model_name, conn, description=None, model_type=None):
     """
-    Serialize and save the best model in base64 to the database.
+    Serialize and save the best model in base64 to the database, including model_type in metadata.
     """
     import io
     buffer = io.BytesIO()
@@ -238,7 +242,9 @@ def save_best_model(model, model_name, conn, description=None):
     buffer.seek(0)
     model_bytes = buffer.read()
     model_base64 = base64.b64encode(model_bytes).decode('utf-8')
-    save_best_model_base64(conn, model_name, model_base64, description)
+    # Save model_type in the description or as a separate field if supported
+    metadata = {"description": description, "model_type": model_type} if model_type else {"description": description}
+    save_best_model_base64(conn, model_name, model_base64, json.dumps(metadata),model_type)
 
 
 def train_cache_model(
@@ -395,11 +401,17 @@ def train_cache_model(
         "training_time_seconds": training_time.total_seconds(),
         "timesteps": timesteps,
         "feature_columns": feature_columns,
-        "trained_at": timestamp
+        "trained_at": timestamp,
+        "model_type": algorithm  # <-- Add model_type to metadata
     }
 
     with open(f"{model_name}.meta.json", "w") as f:
         json.dump(metadata, f, indent=2)
+
+    # Save to database with model_type
+    # If you have a DB connection object (conn), pass model_type to save_best_model
+    # Example:
+    # save_best_model(model, model_name, conn, description="Best model", model_type=algorithm)
 
     # Close environments
     env.close()

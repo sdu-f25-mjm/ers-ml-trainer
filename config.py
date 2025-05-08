@@ -11,3 +11,4 @@ DB_URL = os.getenv(
     f"{DB_DRIVER}://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 )
 API_URL = os.getenv("API_URL", "http://localhost:8282")
+LIST_OF_ENDPOINTS = ["ENDPOINTS"]

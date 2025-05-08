@@ -411,12 +411,6 @@ async def seed_database(
 @app.post("/simulation/start", response_model=Dict[str, Any], tags=["Simulation"],
           description="Start a background simulation of cache metrics")
 async def start_simulation(
-        db_type: str = Query(DB_DRIVER),
-        host: str = Query(DB_HOST),
-        port: int = Query(DB_PORT),
-        user: str = Query(DB_USER),
-        password: str = Query(DB_PASSWORD),
-        database: str = Query(DB_NAME),
         update_interval: int = Query(5),
         api_url: str = Query(API_URL, description="API URL for data generation"),
         run_duration: Optional[int] = Query(None, description="Duration of the simulation in seconds"),
@@ -429,10 +423,6 @@ async def start_simulation(
             return {"status": "already_running", "simulation_id": sim_id}
 
         from mock.mock_db import get_db_handler
-
-        db_handler = get_db_handler(db_type.split('+')[0])
-        if not db_handler.connect(host, port, user, password, database):
-            raise HTTPException(status_code=500, detail=f"Failed to connect to {db_type} database")
 
         stop_event = threading.Event()
 
@@ -448,8 +438,6 @@ async def start_simulation(
             "thread": sim_thread,
             "stop_event": stop_event,
             "start_time": datetime.now().isoformat(),
-            "db_type": db_type,
-            "database": database,
             "run_duration": run_duration
         }
 
@@ -494,15 +482,13 @@ async def stop_simulation(simulation_id: str):
         raise HTTPException(status_code=500, detail=f"Error stopping simulation: {str(e)}")
 
 
-@app.get("/simulation/status", response_model=Dict[str, Any], tags=["simulation"],
+@app.get("/simulation/status", response_model=Dict[str, Any], tags=["Simulation"],
          description="Get status of all running cache metric simulations")
 async def simulation_status():
     """Get status of all running simulations"""
     result = {}
     for sim_id, data in running_simulations.items():
         result[sim_id] = {
-            "db_type": data["db_type"],
-            "database": data["database"],
             "run_duration": data["run_duration"],
             "start_time": data["start_time"],
             "running": data["thread"].is_alive()
