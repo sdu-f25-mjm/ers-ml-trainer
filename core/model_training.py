@@ -459,12 +459,15 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
         # Load feature columns from model metadata if not provided
         metadata_path = f"{model_path.replace('.zip', '')}.meta.json"
         feature_columns = None
+        cache_size = None
         if os.path.exists(metadata_path):
             try:
                 with open(metadata_path, 'r') as f:
                     metadata = json.load(f)
                     feature_columns = metadata.get('feature_columns')
+                    cache_size = metadata.get('cache_size')
                     logger.info(f"Loaded feature columns from metadata: {feature_columns}")
+                    logger.info(f"Loaded cache_size from metadata: {cache_size}")
             except Exception as e:
                 logger.warning(f"Failed to load feature columns from metadata: {e}")
 
@@ -473,6 +476,11 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             from api.app_utils import CacheTableEnum
             feature_columns = [e.value for e in CacheTableEnum]
             logger.info(f"Using default feature columns: {feature_columns}")
+
+        # Default cache_size if not found
+        if not cache_size:
+            cache_size = 10
+            logger.info(f"Using default cache_size: {cache_size}")
 
         # Load model with proper device
         if "ppo" in model_path.lower():
@@ -484,23 +492,29 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
 
         logger.info(f"Model loaded successfully on {device}!")
 
-        # Create environment with explicit table_name and feature columns
+        # Create environment with explicit table_name, feature columns, and cache_size
         env = create_mariadb_cache_env(
             db_url=db_url,
             table_name=table_name,
             feature_columns=feature_columns,
-            cache_size=10,
+            cache_size=cache_size,
             max_queries=eval_steps
         )
 
         # --- SHAPE CHECK: Ensure observation space matches model ---
         env_obs_shape = env.observation_space.shape
         model_obs_shape = model.observation_space.shape
+        logger.info(f"Model expects observation shape: {model_obs_shape}")
+        logger.info(f"Environment provides observation shape: {env_obs_shape}")
+        logger.info(f"Feature columns used: {feature_columns}")
+        logger.info(f"Cache size used: {cache_size}")
+
         if env_obs_shape != model_obs_shape:
             error_msg = (
                 f"Error: Observation shape mismatch. "
                 f"Model expects {model_obs_shape}, but environment provides {env_obs_shape}. "
-                f"Check that feature_columns and cache_size match between training and evaluation."
+                f"Check that feature_columns and cache_size match between training and evaluation. "
+                f"Model feature_columns: {feature_columns}, cache_size: {cache_size}"
             )
             logger.error(f"Model evaluation failed: {error_msg}")
             return {"error": error_msg, "success": False}
