@@ -282,3 +282,41 @@ CREATE TABLE IF NOT EXISTS cache_metrics
     traffic_intensity FLOAT null
     );
 
+CREATE TABLE IF NOT EXISTS rl_models
+(
+    id
+    INT
+    AUTO_INCREMENT
+    PRIMARY
+    KEY,
+    model_name
+    VARCHAR
+(
+    255
+) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    model_base64 LONGTEXT NOT NULL,
+    description TEXT,
+    model_type VARCHAR
+(
+    64
+),
+    input_dimension INT,
+    algorithm VARCHAR
+(
+    64
+),
+    device VARCHAR
+(
+    64
+),
+    cache_size INT,
+    batch_size INT,
+    learning_rate FLOAT,
+    timesteps INT,
+    feature_columns TEXT,
+    trained_at VARCHAR
+(
+    64
+)
+    );

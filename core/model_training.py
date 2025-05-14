@@ -1,6 +1,6 @@
 # core/model_training_utils.py
 
-import base64
+
 import json
 import logging
 import os
@@ -15,7 +15,6 @@ from stable_baselines3.common.monitor import Monitor
 from api.app_utils import AlgorithmEnum
 from core.cache_environment import create_mariadb_cache_env
 from core.utils import is_cuda_available
-from database.database_connection import save_best_model_base64
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +37,7 @@ def configure_gpu_environment():
     try:
         gpu_count = torch.cuda.device_count()
         logger.info(f"Found {gpu_count} CUDA device(s)")
-        for i in range(gpu_count):
+        for i in gpu_count:
             logger.info(f"GPU {i}: {torch.cuda.get_device_name(i)}")
 
         # Configure additional GPU settings
@@ -230,21 +229,6 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
     except Exception as e:
         logger.error(f"Failed to export model: {e}")
         raise
-
-
-def save_best_model(model, model_name, conn, description=None, model_type=None):
-    """
-    Serialize and save the best model in base64 to the database, including model_type in metadata.
-    """
-    import io
-    buffer = io.BytesIO()
-    model.save(buffer)
-    buffer.seek(0)
-    model_bytes = buffer.read()
-    model_base64 = base64.b64encode(model_bytes).decode('utf-8')
-    # Save model_type in the description or as a separate field if supported
-    metadata = {"description": description, "model_type": model_type} if model_type else {"description": description}
-    save_best_model_base64(conn, model_name, model_base64, json.dumps(metadata),model_type)
 
 
 def train_cache_model(

@@ -278,17 +278,17 @@ def save_best_model_base64(
     engine,
     model: str,
     base64: str,
-    description: str = None,
-    type: str = None,
-    input_dimension: int = None,
-    algorithm: str = None,
-    device: str = None,
-    cache_size: int = None,
-    batch_size: int = None,
-    learning_rate: float = None,
-    timesteps: int = None,
-    feature_columns: list = None,
-    trained_at: str = None
+    description: str,
+    type: str,
+    input_dimension: int,
+    algorithm: str,
+    device: str,
+    cache_size: int,
+    batch_size: int,
+    learning_rate: float,
+    timesteps: int,
+    feature_columns: list,
+    trained_at: str
 ):
     """
     Insert a base64‐encoded model into the rl_models table, including input_dimension and extended metadata.
@@ -303,6 +303,15 @@ def save_best_model_base64(
     logger.info(f"Model description: {description}")
     logger.info(f"Model base64 length: {len(base64)}")
     logger.info(f"Input dimension: {input_dimension}")
+    logger.info(f"Algorithm: {algorithm}")
+    logger.info(f"Device: {device}")
+    logger.info(f"Cache size: {cache_size}")
+    logger.info(f"Batch size: {batch_size}")
+    logger.info(f"Learning rate: {learning_rate}")
+    logger.info(f"Timesteps: {timesteps}")
+    logger.info(f"Feature columns: {feature_columns}")
+    logger.info(f"Trained at: {trained_at}")
+
 
     # Build extended description as JSON
     if isinstance(description, dict):
@@ -336,11 +345,15 @@ def save_best_model_base64(
     if isinstance(type, dict):
         type = json.dumps(type)
 
+    # --- Updated: Insert all fields ---
     stmt = text("""
-                INSERT INTO rl_models
-                (model_name, created_at, model_base64, description, model_type, input_dimension)
-                VALUES (:model, NOW(), :base64, :description, :type, :input_dimension)
-                """)
+        INSERT INTO rl_models
+        (model_name, created_at, model_base64, description, model_type, input_dimension,
+         algorithm, device, cache_size, batch_size, learning_rate, timesteps, feature_columns, trained_at)
+        VALUES
+        (:model, NOW(), :base64, :description, :type, :input_dimension,
+         :algorithm, :device, :cache_size, :batch_size, :learning_rate, :timesteps, :feature_columns, :trained_at)
+    """)
     with engine.connect() as conn:
         try:
             logger.info(f"Executing SQL statement: {stmt}")
@@ -352,6 +365,14 @@ def save_best_model_base64(
                     "description": description_json,
                     "type": type,
                     "input_dimension": input_dimension,
+                    "algorithm": algorithm,
+                    "device": device,
+                    "cache_size": cache_size,
+                    "batch_size": batch_size,
+                    "learning_rate": learning_rate,
+                    "timesteps": timesteps,
+                    "feature_columns": json.dumps(feature_columns) if feature_columns is not None else None,
+                    "trained_at": trained_at,
                 }
             )
             conn.commit()
@@ -359,3 +380,4 @@ def save_best_model_base64(
         except Exception as e:
             logger.error(f"Failed to save best model to database: {e}")
             raise
+
