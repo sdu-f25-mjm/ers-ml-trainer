@@ -9,3 +9,5 @@ uvicorn>=0.34.0
 mysql-connector-python>=9.2.0
 gymnasium>=1.1.1
 stable-baselines3==2.6.0
+requests==2.32.3
+pyyaml==6.0.2

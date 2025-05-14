@@ -356,9 +356,11 @@ async def seed_database(
         hours: int = Query(1000, description="Hours of data to generate"),
         data_types: Optional[List[TableEnum]] = Query(None, description="Data types: " + ", ".join(
             [e.name for e in TableEnum])),
-        use_simulate_live: bool = Query(
-            False,
+        use_simulate_live: bool = Query(False,
             description="If true, use the new simulate_live.simulate_visits for cache_metrics data"
+        ),
+        amount_of_urls : int = Query(10,
+            description="Number of endpoints to use for simulation; if None, all endpoints are used"
         ),
         n: int = Query(10000,
                        description="Number of simulated visits for simulate_live (only used if use_simulate_live=True)")
@@ -383,7 +385,8 @@ async def seed_database(
                 update_interval=0,
                 api_url=api_url,
                 run_duration=hours,
-                stop_event=None  # or adjust as needed
+                stop_event=None,
+                endpoints_to_use=amount_of_urls
             )
             db_handler.commit()
             db_handler.close()
@@ -415,6 +418,8 @@ async def start_simulation(
         api_url: str = Query(API_URL, description="API URL for data generation"),
         run_duration: Optional[int] = Query(None, description="Duration of the simulation in seconds"),
         simulation_id: str = Query(None),
+        amount_of_urls : int = Query(10,description="Number of endpoints to use for simulation; if None, all endpoints are used"
+        ),
         n: int = Query(10000, description="Number of simulated visits to generate"),
 ):
     try:
@@ -428,7 +433,7 @@ async def start_simulation(
 
         sim_thread = threading.Thread(
             target=simulate_visits,
-            args=(n, update_interval, api_url, run_duration, stop_event),  # adapt as needed
+            args=(n, update_interval, api_url, run_duration, stop_event,amount_of_urls),  # adapt as needed
             daemon=True
         )
 
