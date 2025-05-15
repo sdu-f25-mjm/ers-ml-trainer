@@ -129,15 +129,15 @@ async def start_training(
                         + ", ".join([e.value for e in AlgorithmEnum]) + ")"
         ),
         cache_size: int = Query(
-            20,
-            description="Cache size in MB (maximum total size of items the simulated cache can hold)"
+            10,
+            description="Maximum number of items the simulated cache can hold"
         ),
         max_queries: int = Query(
             1000,
             description="Total number of simulated queries to run during training"
         ),
         timesteps: int = Query(
-            1000000,
+            100000,
             description="Number of timesteps to execute in the training process"
         ),
         table_name: str = Query(
@@ -165,7 +165,7 @@ async def start_training(
             description="Enable GPU acceleration for training if CUDA is available"
         ),
         batch_size: Optional[int] = Query(
-            None,
+            64,
             description="Batch size for each training update"
         ),
         learning_rate: Optional[float] = Query(
@@ -211,7 +211,7 @@ async def start_training(
         model_id,
         db_url,
         algorithm,
-        cache_size,  # Now interpreted as MB
+        cache_size,
         max_queries,
         timesteps,
         table_name,

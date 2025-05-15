@@ -53,10 +53,9 @@ from core.utils import list_available_models
 # Get all models
 models = list_available_models()
 print(f"Found {len(models)} models:")
-for m in models:
+for model in models:
     print(
-        f"- {m['algorithm'].upper()} (cache_size_mb: {m.get('cache_size_mb')}MB) trained on {m['device'].upper()} at {m['created_at']}"
-    )
+        f"- {model['algorithm'].upper()} (cache size: {model['cache_size']}) trained on {model['device'].upper()} at {model['created_at']}")
 
 class MariaDBCacheEnvironment(gym.Env):
     """
@@ -72,9 +71,7 @@ class MariaDBCacheEnvironment(gym.Env):
             self,
             db_url: str = None,
             cache_size: int = 10,
-            cache_size_mb: int = None,  # New: cache size in MB
             feature_columns: List[str] = None,
-            target_column: str = None,
             max_queries: int = 500,
             table_name: str = None,  # Optional table name parameter
             cache_weights: Optional[List[str]] = None  # <-- add param
@@ -85,9 +82,7 @@ class MariaDBCacheEnvironment(gym.Env):
         Args:
             db_url: The database connection URL
             cache_size: Size of the cache (number of rows)
-            cache_size_mb: Size of the cache in MB
             feature_columns: Features to use for observation space
-            target_column: Target column for optimization
             max_queries: Maximum number of queries to run
             table_name: Optional specific table to use (will auto-discover if None)
             cache_weights: Optional list of columns to use for weighted reward calculation
@@ -96,10 +91,12 @@ class MariaDBCacheEnvironment(gym.Env):
 
         self.logger = logging.getLogger(__name__)
         self.cache_size = cache_size
-        self.cache_size_mb = cache_size_mb
         self.max_queries = max_queries
         self.db_url = db_url
         self.cache_weights = cache_weights
+
+        # --- FIX: Always define cache_size, use the provided value ---
+        self.cache_size = cache_size
 
         # Create database connection
         self.logger.info(f"Connecting to database: {self.db_url}")
@@ -150,21 +147,6 @@ class MariaDBCacheEnvironment(gym.Env):
             raise ValueError(f"No data found in table {self.table_name}")
 
         self.logger.info(f"Loaded {len(self.data)} rows from {self.table_name}")
-
-        # --- FIX: Always recalculate cache_size if cache_size_mb is set ---
-        if cache_size_mb is not None:
-            if "size_bytes" in self.data.columns:
-                avg_item_size = self.data["size_bytes"].mean()
-                if avg_item_size > 0:
-                    # Use integer division to avoid overestimating number of items
-                    self.cache_size = max(1, int((cache_size_mb * 1024 * 7) // avg_item_size))
-                    self.logger.info(f"Cache size set to {self.cache_size} items (from {cache_size_mb} MB, avg item size {avg_item_size:.2f} bytes)")
-                else:
-                    self.logger.warning("Average item size is zero, falling back to default cache_size")
-            else:
-                self.logger.warning("Column 'size_bytes' not found in data, cannot compute cache size from MB. Using default cache_size.")
-        else:
-            self.logger.info(f"Cache size set to {self.cache_size} items (from default or provided item count)")
 
         # Set feature columns
         if feature_columns:
@@ -218,6 +200,9 @@ class MariaDBCacheEnvironment(gym.Env):
         self.cache_hits = 0
         self.cache_misses = 0
 
+        # Debug: Log reset
+        self.logger.info(f"Environment reset: max_queries={self.max_queries}, cache_size={self.cache_size}, data_len={len(self.data)}")
+
         # Get initial observation
         query_features = self._get_query_features(self.current_query_idx)
         cache_features = np.zeros(self.cache_size)
@@ -227,50 +212,58 @@ class MariaDBCacheEnvironment(gym.Env):
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         """Execute one step in the environment."""
-        self.queries_executed += 1
+        try:
+            self.queries_executed += 1
 
-        # Process the action - 1 means add to cache, 0 means don't
-        current_query = self.data.iloc[self.current_query_idx]
+            # Process the action - 1 means add to cache, 0 means don't
+            current_query = self.data.iloc[self.current_query_idx]
 
-        cache_hit = self._check_cache_hit(current_query)
+            cache_hit = self._check_cache_hit(current_query)
 
-        if action == 1 and not cache_hit:
-            # Add to cache if not already in cache
-            self._update_cache(current_query)
+            if action == 1 and not cache_hit:
+                # Add to cache if not already in cache
+                self._update_cache(current_query)
 
-        # --- Custom weighted reward ---
-        if self.cache_weights:
-            reward = 0.0
-            for col in self.cache_weights:
-                try:
-                    val = float(current_query[col])
-                except Exception:
-                    val = 0.0
-                reward += val
-            reward = reward if cache_hit else -0.1 * reward
-        else:
-            reward = 1.0 if cache_hit else -0.1
+            # --- Custom weighted reward ---
+            if self.cache_weights:
+                reward = 0.0
+                for col in self.cache_weights:
+                    try:
+                        val = float(current_query[col])
+                    except Exception:
+                        val = 0.0
+                    reward += val
+                reward = reward if cache_hit else -0.1 * reward
+            else:
+                reward = 1.0 if cache_hit else -0.1
 
-        # Move to next query
-        self.current_query_idx = (self.current_query_idx + 1) % len(self.data)
+            # Move to next query
+            self.current_query_idx = (self.current_query_idx + 1) % len(self.data)
 
-        # Get next observation
-        next_query_features = self._get_query_features(self.current_query_idx)
-        cache_features = self._get_cache_features()
-        obs = np.concatenate([next_query_features, cache_features])
+            # Get next observation
+            next_query_features = self._get_query_features(self.current_query_idx)
+            cache_features = self._get_cache_features()
+            obs = np.concatenate([next_query_features, cache_features])
 
-        # Check if done
-        done = self.queries_executed >= self.max_queries
+            # Check if done
+            done = self.queries_executed >= self.max_queries
 
-        # Additional info
-        info = {
-            "cache_hit_rate": self.cache_hits / max(1, self.queries_executed),
-            "cache_miss_rate": self.cache_misses / max(1, self.queries_executed),
-            "cache_size": len(self.cache),
-            "queries_executed": self.queries_executed
-        }
+            # Debug: Log step progress
+            if self.queries_executed % 100 == 0 or done:
+                self.logger.info(f"Step {self.queries_executed}/{self.max_queries}, done={done}")
 
-        return obs, reward, done, False, info
+            # Additional info
+            info = {
+                "cache_hit_rate": self.cache_hits / max(1, self.queries_executed),
+                "cache_miss_rate": self.cache_misses / max(1, self.queries_executed),
+                "cache_size": len(self.cache),
+                "queries_executed": self.queries_executed
+            }
+
+            return obs, reward, done, False, info
+        except Exception as e:
+            self.logger.error(f"Exception in step(): {e}")
+            raise
 
     def _get_query_features(self, query_idx: int) -> np.ndarray:
         """Extract features for the current query."""
@@ -322,31 +315,10 @@ class MariaDBCacheEnvironment(gym.Env):
 
     def _update_cache(self, query):
         """Add a new item to the cache, removing oldest if full."""
-        def get_size(item):
-            try:
-                return float(item.get("size_bytes", 0))
-            except Exception:
-                return 0.0
+        if len(self.cache) >= self.cache_size:
+            self.cache.pop(0)  # Remove oldest (FIFO strategy)
 
-        # If using MB-based cache sizing, enforce total bytes constraint
-        if self.cache_size_mb is not None and "size_bytes" in query:
-            max_bytes = self.cache_size_mb * 1024 * 1024
-            current_bytes = sum(get_size(item) for item in self.cache)
-            query_size = get_size(query)
-
-            # Evict oldest items until there is enough space for the new item
-            while self.cache and (current_bytes + query_size) > max_bytes:
-                evicted = self.cache.pop(0)
-                current_bytes -= get_size(evicted)
-
-            # Only add if it fits
-            if (current_bytes + query_size) <= max_bytes:
-                self.cache.append(query)
-        else:
-            # Fallback: item-count-based cache
-            if len(self.cache) >= self.cache_size:
-                self.cache.pop(0)  # Remove oldest (FIFO strategy)
-            self.cache.append(query)
+        self.cache.append(query)
 
     def render(self, mode='human'):
         """Render the current state of the environment."""
@@ -367,7 +339,6 @@ class MariaDBCacheEnvironment(gym.Env):
 def create_mariadb_cache_env(
         db_url: str = None,
         cache_size: int = 10,
-        cache_size_mb: int = None,
         feature_columns: list[str] = None,
         max_queries: int = 500,
         table_name: str = None,
@@ -377,9 +348,9 @@ def create_mariadb_cache_env(
     return MariaDBCacheEnvironment(
         db_url=db_url,
         cache_size=cache_size,
-        cache_size_mb=cache_size_mb,
         feature_columns=feature_columns,
         max_queries=max_queries,
         table_name=table_name,
         cache_weights=cache_weights
     )
+
