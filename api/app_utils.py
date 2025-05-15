@@ -29,6 +29,11 @@ training_models = {}
 
 
 def load_trained_models(models_dir="models"):
+    # Ensure models directory exists
+    if not os.path.exists(models_dir):
+        os.makedirs(models_dir, exist_ok=True)
+        return []
+
     models = []
     for folder in os.listdir(models_dir):
         model_path = os.path.join(models_dir, folder)
