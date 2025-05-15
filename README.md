@@ -245,3 +245,11 @@ MIT License
 
 ---
 `
+
+For most cache‐optimization tasks you’ll want a batch size that balances stable learning with hardware limits:
+
+• DQN: 32–64
+• A2C: 16–32
+• PPO: 64–256
+
+Smaller batches (e.g. 32) give noisier but more frequent updates; larger ones (128–256) smooth your gradient estimates but increase memory/compute per update. Start at 64, watch GPU/CPU memory and training stability, then tweak up or down.

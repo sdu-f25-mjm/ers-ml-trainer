@@ -3,6 +3,8 @@ import logging
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Dict, Any
+import os
+import json
 
 from fastapi import HTTPException
 from pydantic import BaseModel
@@ -26,29 +28,57 @@ running_simulations = {}
 training_models = {}
 
 
-def load_trained_models():
-    """
-    Load all trained models at runtime and populate the training_jobs dictionary
-    """
-    global training_models
-    logger.info("Loading trained models into memory...")
-    models = list_available_models()
-    for model in models:
-        model_id = f"{model['algorithm']}_{model['cache_size']}_{model['timestamp']}"
-        training_models[model_id] = {
-            "model_id": model_id,
-            "status": "completed",
-            "start_time": model['created_at'],
-            "end_time": None,
-            "model_path": model['path'],
-            "metrics": model['metadata']
-        }
-    logger.info(f"Loaded {len(training_models)} trained models")
-    return training_models
+def load_trained_models(models_dir="models"):
+    models = []
+    for folder in os.listdir(models_dir):
+        model_path = os.path.join(models_dir, folder)
+        if not os.path.isdir(model_path):
+            continue
+
+        # Load metadata if present
+        meta_path = os.path.join(model_path + ".meta.json")
+        metadata = {}
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r") as f:
+                    metadata = json.load(f)
+            except Exception:
+                pass
+
+        # Determine cache_size: prefer cache_size_mb, else legacy cache_size
+        cache_size = metadata.get("cache_size_mb", metadata.get("cache_size", None))
+
+        # Determine timestamp
+        timestamp = metadata.get("trained_at", folder.split("_")[-1])
+
+        # Build model_id string
+        model_id = f"{metadata.get('algorithm', folder)}_{cache_size}_{timestamp}"
+
+        models.append({
+            "model_id":      model_id,
+            "algorithm":     metadata.get("algorithm"),
+            "device":        metadata.get("device"),
+            # Expose cache_size in MB for clients
+            "cache_size_mb": cache_size,
+            "trained_at":    timestamp,
+            "path":          model_path
+        })
+
+    return models
 
 
 # Initialize the training_jobs dictionary with existing models
-load_trained_models()
+models = load_trained_models()
+for model in models:
+    training_models[model["model_id"]] = {
+        "model_id": model["model_id"],
+        "status": "completed",
+        "start_time": model["trained_at"],
+        "end_time": None,
+        "model_path": model["path"],
+        "metrics": model
+    }
+logger.info(f"Loaded {len(training_models)} trained models")
 
 
 # database types
@@ -227,3 +257,4 @@ def get_dynamic_feature_columns_enum(db_url: str):
     feature_columns = [col for col in columns if col not in exclude]
     # Dynamically create the Enum
     return Enum('FeatureColumnsEnum', {col: col for col in feature_columns})
+
