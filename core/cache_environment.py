@@ -72,6 +72,7 @@ class MariaDBCacheEnvironment(gym.Env):
             self,
             db_url: str = None,
             cache_size: int = 10,
+            cache_size_mb: int = None,  # New: cache size in MB
             feature_columns: List[str] = None,
             target_column: str = None,
             max_queries: int = 500,
@@ -84,6 +85,7 @@ class MariaDBCacheEnvironment(gym.Env):
         Args:
             db_url: The database connection URL
             cache_size: Size of the cache (number of rows)
+            cache_size_mb: Size of the cache in MB
             feature_columns: Features to use for observation space
             target_column: Target column for optimization
             max_queries: Maximum number of queries to run
@@ -94,6 +96,7 @@ class MariaDBCacheEnvironment(gym.Env):
 
         self.logger = logging.getLogger(__name__)
         self.cache_size = cache_size
+        self.cache_size_mb = cache_size_mb
         self.max_queries = max_queries
         self.db_url = db_url
         self.cache_weights = cache_weights
@@ -147,6 +150,18 @@ class MariaDBCacheEnvironment(gym.Env):
             raise ValueError(f"No data found in table {self.table_name}")
 
         self.logger.info(f"Loaded {len(self.data)} rows from {self.table_name}")
+
+        # Determine cache size (number of items) based on MB if provided
+        if self.cache_size_mb is not None:
+            if "size_bytes" in self.data.columns:
+                avg_item_size = self.data["size_bytes"].mean()
+                if avg_item_size > 0:
+                    self.cache_size = max(1, int((self.cache_size_mb * 1024 * 1024) / avg_item_size))
+                    self.logger.info(f"Cache size set to {self.cache_size} items (from {self.cache_size_mb} MB, avg item size {avg_item_size:.2f} bytes)")
+                else:
+                    self.logger.warning("Average item size is zero, falling back to default cache_size")
+            else:
+                self.logger.warning("Column 'size_bytes' not found in data, cannot compute cache size from MB. Using default cache_size.")
 
         # Set feature columns
         if feature_columns:
@@ -328,6 +343,7 @@ class MariaDBCacheEnvironment(gym.Env):
 def create_mariadb_cache_env(
         db_url: str = None,
         cache_size: int = 10,
+        cache_size_mb: int = None,
         feature_columns: list[str] = None,
         max_queries: int = 500,
         table_name: str = None,
@@ -337,8 +353,10 @@ def create_mariadb_cache_env(
     return MariaDBCacheEnvironment(
         db_url=db_url,
         cache_size=cache_size,
+        cache_size_mb=cache_size_mb,
         feature_columns=feature_columns,
         max_queries=max_queries,
         table_name=table_name,
         cache_weights=cache_weights
     )
+

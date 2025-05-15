@@ -234,7 +234,7 @@ def export_model_to_torchscript(model_path, output_dir="best_model"):
 def train_cache_model(
         db_url,
         algorithm=AlgorithmEnum,
-        cache_size=10,
+        cache_size=10,  # Now interpreted as MB
         max_queries=500,
         table_name=None,
         feature_columns=None,
@@ -246,6 +246,7 @@ def train_cache_model(
 ):
     """
     Train a cache model using either CPU or GPU based on availability and preferences.
+    cache_size: Size of the cache in MB (maximum total size of items the simulated cache can hold)
     """
     # Determine device
     device = get_device(use_gpu)
@@ -274,7 +275,7 @@ def train_cache_model(
     # Create training environment
     env = create_mariadb_cache_env(
         db_url=db_url,
-        cache_size=cache_size,
+        cache_size_mb=cache_size,  # Pass as MB
         feature_columns=feature_columns,
         max_queries=max_queries,
         table_name=table_name,
@@ -284,7 +285,7 @@ def train_cache_model(
     # Create evaluation environment
     eval_env = create_mariadb_cache_env(
         db_url=db_url,
-        cache_size=cache_size,
+        cache_size_mb=cache_size,  # Pass as MB
         feature_columns=feature_columns,
         max_queries=max_queries,
         table_name=table_name,
@@ -379,7 +380,7 @@ def train_cache_model(
     metadata = {
         "algorithm": algorithm,
         "device": device,
-        "cache_size": cache_size,
+        "cache_size_mb": cache_size,  # Save as MB
         "batch_size": params["batch_size"],
         "learning_rate": params["learning_rate"],
         "training_time_seconds": training_time.total_seconds(),
@@ -624,3 +625,4 @@ def evaluate_cache_model(model_path, eval_steps=1000, db_url=None, use_gpu=False
             return evaluate_cache_model(model_path, eval_steps, db_url, use_gpu=False, table_name=table_name)
 
         return {"error": str(e), "success": False}
+

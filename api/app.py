@@ -129,15 +129,15 @@ async def start_training(
                         + ", ".join([e.value for e in AlgorithmEnum]) + ")"
         ),
         cache_size: int = Query(
-            10,
-            description="Maximum number of items the simulated cache can hold"
+            20,
+            description="Cache size in MB (maximum total size of items the simulated cache can hold)"
         ),
         max_queries: int = Query(
-            500,
+            1000,
             description="Total number of simulated queries to run during training"
         ),
         timesteps: int = Query(
-            100000,
+            1000000,
             description="Number of timesteps to execute in the training process"
         ),
         table_name: str = Query(
@@ -211,7 +211,7 @@ async def start_training(
         model_id,
         db_url,
         algorithm,
-        cache_size,
+        cache_size,  # Now interpreted as MB
         max_queries,
         timesteps,
         table_name,
@@ -658,3 +658,4 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+

@@ -69,8 +69,6 @@ class AlgorithmEnum(str, Enum):
 
 # Add new enum for training weights
 class CacheTableEnum(str, Enum):
-    HIT_RATIO = "hit_ratio"
-    ITEM_COUNT = "item_count"
     LOAD_TIME = "load_time_ms"
     SIZE = "size_bytes"
     INTENSITY = "traffic_intensity"
