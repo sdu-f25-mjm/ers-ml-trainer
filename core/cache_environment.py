@@ -151,17 +151,20 @@ class MariaDBCacheEnvironment(gym.Env):
 
         self.logger.info(f"Loaded {len(self.data)} rows from {self.table_name}")
 
-        # Determine cache size (number of items) based on MB if provided
-        if self.cache_size_mb is not None:
+        # --- FIX: Always recalculate cache_size if cache_size_mb is set ---
+        if cache_size_mb is not None:
             if "size_bytes" in self.data.columns:
                 avg_item_size = self.data["size_bytes"].mean()
                 if avg_item_size > 0:
-                    self.cache_size = max(1, int((self.cache_size_mb * 1024 * 1024) / avg_item_size))
-                    self.logger.info(f"Cache size set to {self.cache_size} items (from {self.cache_size_mb} MB, avg item size {avg_item_size:.2f} bytes)")
+                    # Use integer division to avoid overestimating number of items
+                    self.cache_size = max(1, int((cache_size_mb * 1024 * 7) // avg_item_size))
+                    self.logger.info(f"Cache size set to {self.cache_size} items (from {cache_size_mb} MB, avg item size {avg_item_size:.2f} bytes)")
                 else:
                     self.logger.warning("Average item size is zero, falling back to default cache_size")
             else:
                 self.logger.warning("Column 'size_bytes' not found in data, cannot compute cache size from MB. Using default cache_size.")
+        else:
+            self.logger.info(f"Cache size set to {self.cache_size} items (from default or provided item count)")
 
         # Set feature columns
         if feature_columns:
@@ -319,10 +322,31 @@ class MariaDBCacheEnvironment(gym.Env):
 
     def _update_cache(self, query):
         """Add a new item to the cache, removing oldest if full."""
-        if len(self.cache) >= self.cache_size:
-            self.cache.pop(0)  # Remove oldest (FIFO strategy)
+        def get_size(item):
+            try:
+                return float(item.get("size_bytes", 0))
+            except Exception:
+                return 0.0
 
-        self.cache.append(query)
+        # If using MB-based cache sizing, enforce total bytes constraint
+        if self.cache_size_mb is not None and "size_bytes" in query:
+            max_bytes = self.cache_size_mb * 1024 * 1024
+            current_bytes = sum(get_size(item) for item in self.cache)
+            query_size = get_size(query)
+
+            # Evict oldest items until there is enough space for the new item
+            while self.cache and (current_bytes + query_size) > max_bytes:
+                evicted = self.cache.pop(0)
+                current_bytes -= get_size(evicted)
+
+            # Only add if it fits
+            if (current_bytes + query_size) <= max_bytes:
+                self.cache.append(query)
+        else:
+            # Fallback: item-count-based cache
+            if len(self.cache) >= self.cache_size:
+                self.cache.pop(0)  # Remove oldest (FIFO strategy)
+            self.cache.append(query)
 
     def render(self, mode='human'):
         """Render the current state of the environment."""
@@ -359,4 +383,3 @@ def create_mariadb_cache_env(
         table_name=table_name,
         cache_weights=cache_weights
     )
-
