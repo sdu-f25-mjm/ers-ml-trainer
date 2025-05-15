@@ -208,7 +208,7 @@ def list_available_models(models_dir="models"):
             "path": filepath,
             "algorithm": algorithm,
             "device": device,
-            "cache_size": int(cache_size),
+            "cache_size_mb": int(metadata.get("cache_size_mb", cache_size)),
             "timestamp": timestamp,
             "created_at": metadata.get("trained_at", timestamp),
             "metadata": metadata

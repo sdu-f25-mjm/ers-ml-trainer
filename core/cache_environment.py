@@ -53,10 +53,10 @@ from core.utils import list_available_models
 # Get all models
 models = list_available_models()
 print(f"Found {len(models)} models:")
-for model in models:
+for m in models:
     print(
-        f"- {model['algorithm'].upper()} (cache size: {model['cache_size']}) trained on {model['device'].upper()} at {model['created_at']}")
-
+        f"- {m['algorithm'].upper()} (cache_size_mb: {m.get('cache_size_mb')}MB) trained on {m['device'].upper()} at {m['created_at']}"
+    )
 
 class MariaDBCacheEnvironment(gym.Env):
     """
