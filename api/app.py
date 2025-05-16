@@ -124,22 +124,23 @@ async def start_training(
             description="Name of the database/schema to connect to"
         ),
         algorithm: AlgorithmEnum = Query(
-            AlgorithmEnum.dqn,
+            AlgorithmEnum.ppo,
             description="Reinforcement learning algorithm for cache model (options: "
                         + ", ".join([e.value for e in AlgorithmEnum]) + ")"
         ),
         cache_size: int = Query(
-            10,
+            30,
             description="Maximum number of items the simulated cache can hold"
         ),
         max_queries: int = Query(
-            1000,
-            description="Total number of simulated queries to run during training"
+            500,
+            description="Total number of simulated queries to run per episode"
         ),
         timesteps: int = Query(
-            100000,
-            description="Number of timesteps to execute in the training process"
+            200000,
+            description="Number of training timesteps (env steps) to execute"
         ),
+
         table_name: str = Query(
             "cache_metrics",
             description="Name of the table containing cache metrics (options: "
@@ -147,34 +148,28 @@ async def start_training(
         ),
         feature_columns: Optional[List[str]] = Query(
             None,
-            description=(
-                    "Optional list of column names from the cache_metrics table to use as features; "
-                    "if omitted, uses all available metric columns from the table."
-            )
+            description="List of metric columns to use as features; None = auto‐detect all"
         ),
         cache_weights: Optional[List[CacheTableEnum]] = Query(
             None,
-            description=(
-                    "Optional list of cache metric enum values to apply custom weights in training; "
-                    "defaults to equal weighting across all metrics; valid values: "
-                    + ", ".join([e.value for e in CacheTableEnum]) + "."
-            )
+            description="Optional metric weights; None = equal weighting across all"
         ),
+
+        # Compute & optimizer
         use_gpu: bool = Query(
-            False,
-            description="Enable GPU acceleration for training if CUDA is available"
+            True,
+            description="Enable GPU if CUDA is available"
         ),
         batch_size: Optional[int] = Query(
-            64,
+            128,
             description="Batch size for each training update"
         ),
         learning_rate: Optional[float] = Query(
-            "0.0001",
+            3e-4,
             description="Learning rate for the RL optimizer"
-        )
-
+        ),
 ):
-    model_id = str(uuid4())
+    model_id = f"{algorithm.value}-{str(uuid4())}"
     logger.info(f"Starting training model {model_id}")
     start_time = datetime.now().isoformat()
     db_url = build_custom_db_url(db_type, host, port, database, user, password)
@@ -211,7 +206,7 @@ async def start_training(
         model_id,
         db_url,
         algorithm,
-        cache_size,
+        cache_size,  # <-- cache_size is passed here
         max_queries,
         timesteps,
         table_name,
@@ -658,4 +653,3 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
-

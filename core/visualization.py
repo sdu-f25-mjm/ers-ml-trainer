@@ -1,314 +1,220 @@
-# core/visualization.py
 import logging
 import os
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib.animation as animation
-import threading
+
+# -----------------------------------------------------------------------------
+# Configure module‐level logger with UTF-8 encoding
+# -----------------------------------------------------------------------------
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)
+file_handler = logging.FileHandler(os.path.join(log_dir, "application.log"), encoding="utf-8")
+stream_handler = logging.StreamHandler()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[file_handler, stream_handler],
+)
+logger = logging.getLogger(__name__)
 
 
-def visualize_cache_performance(evaluation_results, output_dir="cache_eval_results"):
-    """Generate visualizations of cache performance metrics and other learning diagnostics"""
-    logger = logging.getLogger(__name__)
+def visualize_cache_performance(
+    evaluation_results: Dict[str, Any],
+    output_dir: str = "cache_eval_results",
+) -> Dict[str, str]:
+    """
+    Generate visualizations of cache performance metrics, action distribution,
+    cache occupancy, hit-rate windows, reward distributions, Q-values, and
+    inference time CDF.
 
-    # Create output directory
+    Returns a dict mapping plot identifiers to file paths.
+    """
     os.makedirs(output_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Extract data
-    hit_history = evaluation_results.get('hit_history', [])
-    moving_hit_rates = evaluation_results.get('moving_hit_rates', [])
-    rewards = evaluation_results.get('rewards', [])
-    final_hit_rate = evaluation_results.get('final_hit_rate', 0)
-    device_used = evaluation_results.get('device_used', 'unknown')
+    # Core data
+    hits: List[int] = evaluation_results.get("hit_history", [])
+    moving: List[float] = (
+        evaluation_results.get("moving_hit_rates")
+        or evaluation_results.get("moving_hit_rate")
+        or []
+    )
+    rewards: List[float] = [float(r or 0.0) for r in evaluation_results.get("rewards", [])]
+    final_hit_rate: float = evaluation_results.get("final_hit_rate", 0.0)
+    device: str = evaluation_results.get("device_used", "UNKNOWN")
 
-    # Extract new reasoning/in_cache columns if present
-    step_reasoning = evaluation_results.get('step_reasoning', [])
-    in_cache = evaluation_results.get('in_cache', [])
+    # Optional diagnostics
+    reasoning: List[str] = evaluation_results.get("step_reasoning", [])
+    in_cache: List[bool] = evaluation_results.get("in_cache", [])
+    actions: List[int] = evaluation_results.get("actions", [])
+    occupancy: List[int] = evaluation_results.get("cache_occupancy", [])
+    q_hist: Optional[List[List[float]]] = evaluation_results.get("q_values_history")
+    ep_rewards: Optional[List[float]] = evaluation_results.get("episode_rewards")
+    losses: Optional[List[float]] = evaluation_results.get("losses")
+    entropies: Optional[List[float]] = evaluation_results.get("entropies")
+    inf_times: List[float] = evaluation_results.get("inference_times", [])
 
-    if not hit_history:
-        logger.warning("No hit history data to visualize")
-        return None
+    plot_paths: Dict[str, str] = {}
+    steps = np.arange(1, len(hits) + 1)
 
-    # --- Fix: Ensure rewards are all numbers ---
-    rewards = [r if r is not None else 0.0 for r in rewards]
+    # --- 1) Main performance plot: Hit/Miss and Rewards ---
+    fig, (ax_hits, ax_rew) = plt.subplots(2, 1, figsize=(10, 12), constrained_layout=True)
 
-    # Create figure with multiple subplots
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12))
+    # Hit/Miss
+    ax_hits.scatter(steps, hits, s=10, alpha=0.5, label="Hit/Miss (1/0)")
+    if moving:
+        ax_hits.plot(steps, moving, color="red", label="Moving Hit Rate")
+    ax_hits.set_title(f"Cache Hits (final rate={final_hit_rate:.3f}) on {device.upper()}")
+    ax_hits.set_xlabel("Step")
+    ax_hits.set_ylabel("Hit (1) / Miss (0)")
+    ax_hits.set_ylim(-0.1, 1.1)
+    ax_hits.grid(True, linestyle="--", alpha=0.7)
+    ax_hits.legend()
 
-    # Plot hit/miss pattern
-    steps = list(range(1, len(hit_history) + 1))
-    ax1.scatter(steps, hit_history, s=10, alpha=0.5, label='Hit/Miss (1/0)')
-    ax1.plot(steps, moving_hit_rates, 'r-', label='Moving Avg Hit Rate')
-    ax1.set_title(f'Cache Hit/Miss Pattern (Final Hit Rate: {final_hit_rate:.4f})')
-    ax1.set_xlabel('Step')
-    ax1.set_ylabel('Cache Hit (1) / Miss (0)')
-    ax1.set_ylim(-0.1, 1.1)
-    ax1.grid(True, linestyle='--', alpha=0.7)
-    ax1.legend()
-
-    # Plot rewards
+    # Rewards per step + normalized cumulative
+    ax_rew.plot(steps, rewards, color="blue", alpha=0.5, label="Step Reward")
     if rewards:
-        cumulative_rewards = np.cumsum(rewards)
-        ax2.plot(steps, rewards, 'b-', alpha=0.5, label='Step Reward')
-        ax2.plot(steps, cumulative_rewards / max(1, max(cumulative_rewards)) * max(rewards),
-                 'g-', label='Normalized Cumulative Reward')
-        ax2.set_title('RL Rewards per Step')
-        ax2.set_xlabel('Step')
-        ax2.set_ylabel('Reward Value')
-        ax2.grid(True, linestyle='--', alpha=0.7)
-        ax2.legend()
+        cum = np.cumsum(rewards)
+        norm = cum / (cum.max() or 1.0) * max(rewards)
+        ax_rew.plot(steps, norm, color="green", linestyle="-", label="Normalized Cumulative")
+    ax_rew.set_title("Rewards per Step")
+    ax_rew.set_xlabel("Step")
+    ax_rew.set_ylabel("Reward")
+    ax_rew.grid(True, linestyle="--", alpha=0.7)
+    ax_rew.legend()
 
-    # Add a table with reasoning and in_cache for first 10 steps (if available)
-    if step_reasoning and in_cache:
-        ax_table = fig.add_axes([0.1, -0.25, 0.8, 0.18])  # [left, bottom, width, height]
-        ax_table.axis('off')
-        n_rows = min(10, len(step_reasoning))
-        col_labels = ["Step", "Hit/Miss", "In Cache", "Reasoning"]
+    # Diagnostics table (first 10 steps)
+    if reasoning and in_cache:
+        n = min(10, len(hits))
         cell_text = []
-        for i in range(n_rows):
-            hitmiss = "Hit" if hit_history[i] else "Miss"
+        for i in range(n):
             cell_text.append([
                 str(i + 1),
-                hitmiss,
-                str(in_cache[i]),
-                step_reasoning[i][:60] + ("..." if len(step_reasoning[i]) > 60 else "")
+                "Hit" if hits[i] else "Miss",
+                "Yes" if in_cache[i] else "No",
+                reasoning[i][:50] + ("…" if len(reasoning[i]) > 50 else ""),
             ])
-        table = ax_table.table(
+        tbl_ax = fig.add_axes([0.1, -0.25, 0.8, 0.2])
+        tbl_ax.axis("off")
+        table = tbl_ax.table(
             cellText=cell_text,
-            colLabels=col_labels,
-            loc='center',
-            cellLoc='left'
+            colLabels=["Step", "Hit/Miss", "In Cache", "Reason"],
+            loc="center"
         )
         table.auto_set_font_size(False)
-        table.set_fontsize(9)
+        table.set_fontsize(8)
         table.scale(1, 1.2)
 
-    # Add metadata
-    fig.set_constrained_layout(True)
-
-    # Add more evaluation metrics to the figure annotation
-    evaluation_time = evaluation_results.get('evaluation_time_seconds', 0)
-    total_reward = evaluation_results.get('total_reward', 0)
-    avg_inference = evaluation_results.get('avg_inference_time_ms', 0)
-
-    plt.figtext(
-        0.5, 0.01,
-        f"Evaluated on {device_used.upper()} | Avg Inference: {avg_inference:.2f}ms | "
-        f"Evaluation Time: {evaluation_time:.2f}s | Total Reward: {total_reward:.2f} | "
-        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        ha="center", fontsize=10,
-        bbox={"facecolor": "orange", "alpha": 0.2, "pad": 5}
+    # Footer annotation
+    avg_inf = evaluation_results.get("avg_inference_ms") or np.mean(inf_times or [0.0])
+    eval_time = evaluation_results.get("evaluation_time_seconds", 0.0)
+    total_reward = evaluation_results.get("total_reward", sum(rewards))
+    footer = (
+        f"Device: {device.upper()} | Avg Inference: {avg_inf:.2f}ms | "
+        f"Eval Time: {eval_time:.2f}s | Total Reward: {total_reward:.2f} | "
+        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     )
+    plt.figtext(0.5, 0.01, footer, ha="center", fontsize=9, bbox=dict(facecolor="yellow", alpha=0.2))
 
-    # Save figure
-    filename = f"cache_performance_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    filepath = os.path.join(output_dir, filename)
-    plt.savefig(filepath, dpi=100)
-    plt.close()
+    perf_path = os.path.join(output_dir, f"cache_performance_{timestamp}.png")
+    plt.savefig(perf_path, dpi=100)
+    plt.close(fig)
+    logger.info(f"Saved performance plot: {perf_path}")
+    plot_paths["performance_plot"] = perf_path
 
-    logger.info(f"Cache visualization saved to {filepath}")
-
-    plot_paths = {"performance_plot": filepath}
-
-    # --- Visualize Q-value estimation if available ---
-    q_values_history = evaluation_results.get('q_values_history')
-    game_name = evaluation_results.get('game_name', 'Unknown')
-    if q_values_history is not None and len(q_values_history) > 0:
-        try:
-            q_values_plot_path = visualize_double_dqn_value_estimation(
-                q_values_history, game_name=game_name, output_dir=output_dir
-            )
-            if q_values_plot_path:
-                logger.info(f"Q-value estimation plot saved to {q_values_plot_path}")
-                plot_paths["q_values_plot"] = q_values_plot_path
-        except Exception as e:
-            logger.warning(f"Failed to visualize Q-value estimation: {e}")
-    else:
-        logger.info("No Q-value history available for Q-value plot.")
-
-    # --- Plot rewards over episodes if available ---
-    episode_rewards = evaluation_results.get('episode_rewards')
-    rewards_plot_path = None
-    if episode_rewards is not None and len(episode_rewards) > 0:
-        try:
-            rewards_plot_path = plot_rewards_over_episodes(
-                episode_rewards, output_dir=output_dir
-            )
-            plot_paths["episode_rewards_plot"] = rewards_plot_path
-            logger.info(f"Episode rewards plot saved to {rewards_plot_path}")
-        except Exception as e:
-            logger.warning(f"Failed to plot rewards over episodes: {e}")
-    else:
-        logger.info("No episode rewards available for episode rewards plot.")
-
-    # --- Plot learning diagnostics if available ---
-    try:
-        diagnostics_paths = plot_learning_diagnostics(
-            evaluation_results,
-            output_dir=output_dir,
-            title_prefix="Learning Diagnostics",
-            episode_rewards_plot_path=rewards_plot_path  # Pass the already generated plot path
-        )
-        if diagnostics_paths:
-            logger.info(f"Learning diagnostics plots saved: {diagnostics_paths}")
-        plot_paths.update(diagnostics_paths)
-    except Exception as e:
-        logger.warning(f"Failed to plot learning diagnostics: {e}")
-
-    return plot_paths
-
-
-def visualize_double_dqn_value_estimation(q_values_history, game_name="Unknown", output_dir="cache_eval_results"):
-    """
-    Visualize Double DQN Q-value estimation statistics (mean, max, min) over time.
-
-    Args:
-        q_values_history: list of lists or 2D np.ndarray, shape (steps, actions)
-        game_name: str, name of the game or experiment
-        output_dir: directory to save the plot
-
-    Returns:
-        Path to the saved plot image.
-    """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import os
-    from datetime import datetime
-    import logging
-
-    logger = logging.getLogger(__name__)
-    os.makedirs(output_dir, exist_ok=True)
-
-    q_values_history = np.array(q_values_history)
-    steps = np.arange(q_values_history.shape[0])
-
-    plt.figure(figsize=(10, 5))
-    plt.plot(steps, np.mean(q_values_history, axis=1), label="Mean Q-value")
-    plt.plot(steps, np.max(q_values_history, axis=1), label="Max Q-value", linestyle='--')
-    plt.plot(steps, np.min(q_values_history, axis=1), label="Min Q-value", linestyle=':')
-    plt.xlabel("Step")
-    plt.ylabel("Q-value")
-    plt.title(f"Double DQN Q-value Estimation: {game_name}")
-    plt.legend()
-    plt.grid(True, linestyle='--', alpha=0.7)
-
-    filename = f"double_dqn_q_values_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    filepath = os.path.join(output_dir, filename)
-    plt.savefig(filepath, dpi=100)
-    plt.close()
-    logger.info(f"Double DQN Q-value estimation plot saved to {filepath}")
-    return filepath
-
-
-def plot_rewards_over_episodes(episode_rewards, output_dir="cache_eval_results", title="Rewards Over Episodes"):
-    """
-    Plot the total reward per episode.
-    Args:
-        episode_rewards: List of total rewards per episode.
-        output_dir: Directory to save the plot.
-        title: Plot title.
-    Returns:
-        Path to the saved plot image.
-    """
-    logger = logging.getLogger(__name__)
-    os.makedirs(output_dir, exist_ok=True)
-    plt.figure(figsize=(10, 5))
-    plt.plot(range(1, len(episode_rewards) + 1), episode_rewards, marker='o', label="Episode Reward")
-    plt.xlabel("Episode")
-    plt.ylabel("Total Reward")
-    plt.title(title)
-    plt.grid(True, linestyle='--', alpha=0.7)
-    plt.legend()
-    filename = f"rewards_over_episodes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    filepath = os.path.join(output_dir, filename)
-    plt.savefig(filepath, dpi=100)
-    plt.close()
-    logger.info(f"Rewards over episodes plot saved to {filepath}")
-    return filepath
-
-
-def plot_learning_diagnostics(
-    training_history,
-    output_dir="cache_eval_results",
-    title_prefix="Learning Diagnostics",
-    episode_rewards_plot_path=None
-):
-    """
-    Plot additional diagnostics for the learning process if data is available.
-    Args:
-        training_history: dict with optional keys: 'losses', 'q_values_history', 'entropies', 'episode_rewards'
-        output_dir: directory to save plots
-        title_prefix: prefix for plot titles
-        episode_rewards_plot_path: if provided, use this path instead of generating a new plot
-    Returns:
-        Dict of plot file paths
-    """
-    logger = logging.getLogger(__name__)
-    os.makedirs(output_dir, exist_ok=True)
-    plot_paths = {}
-
-    # Plot loss curve if available
-    losses = training_history.get('losses')
-    if losses is not None and len(losses) > 0:
-        plt.figure(figsize=(10, 4))
-        plt.plot(losses, label="Loss")
-        plt.xlabel("Training Step")
-        plt.ylabel("Loss")
-        plt.title(f"{title_prefix}: Loss Curve")
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.legend()
-        loss_path = os.path.join(output_dir, f"loss_curve_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-        plt.savefig(loss_path, dpi=100)
+    # --- 2) Action Distribution ---
+    if actions:
+        plt.figure(figsize=(6, 4))
+        plt.hist(actions, bins=[-0.5, 0.5, 1.5], rwidth=0.6, color="skyblue")
+        plt.xticks([0, 1], ["Skip", "Cache"])
+        plt.title("Action Distribution")
+        plt.ylabel("Count")
+        act_path = os.path.join(output_dir, f"action_dist_{timestamp}.png")
+        plt.savefig(act_path, dpi=100)
         plt.close()
-        plot_paths['loss_curve'] = loss_path
-        logger.info(f"Loss curve plot saved to {loss_path}")
+        logger.info(f"Saved action distribution: {act_path}")
+        plot_paths["action_distribution"] = act_path
 
-    # Plot Q-value statistics if available
-    q_values_history = training_history.get('q_values_history')
-    if q_values_history is not None and len(q_values_history) > 0:
-        q_values_history = np.array(q_values_history)
-        steps = np.arange(q_values_history.shape[0])
-        plt.figure(figsize=(10, 4))
-        plt.plot(steps, np.mean(q_values_history, axis=1), label="Mean Q-value")
-        plt.plot(steps, np.max(q_values_history, axis=1), label="Max Q-value", linestyle='--')
-        plt.plot(steps, np.min(q_values_history, axis=1), label="Min Q-value", linestyle=':')
+    # --- 3) Cache Occupancy Over Time ---
+    if occupancy:
+        plt.figure(figsize=(8, 3))
+        plt.plot(steps, occupancy, label="Cache Size")
+        max_cap = evaluation_results.get("cache_size", None)
+        if max_cap:
+            plt.axhline(max_cap, color="red", linestyle="--", label="Max Capacity")
+        plt.title("Cache Occupancy Over Time")
         plt.xlabel("Step")
-        plt.ylabel("Q-value")
-        plt.title(f"{title_prefix}: Q-value Statistics")
-        plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.7)
-        qval_path = os.path.join(output_dir, f"q_value_stats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-        plt.savefig(qval_path, dpi=100)
+        plt.ylabel("Items in Cache")
+        plt.grid(True, linestyle="--", alpha=0.7)
+        occ_path = os.path.join(output_dir, f"cache_occupancy_{timestamp}.png")
+        plt.savefig(occ_path, dpi=100)
         plt.close()
-        plot_paths['q_value_stats'] = qval_path
-        logger.info(f"Q-value statistics plot saved to {qval_path}")
+        logger.info(f"Saved cache occupancy: {occ_path}")
+        plot_paths["cache_occupancy"] = occ_path
 
-    # Plot policy entropy if available
-    entropies = training_history.get('entropies')
-    if entropies is not None and len(entropies) > 0:
+    # --- 4) Hit Rate per Window ---
+    window = evaluation_results.get("window_size", 50)
+    if hits and len(hits) >= window:
+        rates = [np.mean(hits[i : i + window]) for i in range(0, len(hits), window)]
+        plt.figure(figsize=(8, 3))
+        plt.bar(range(len(rates)), rates, color="orange", alpha=0.7)
+        plt.title(f"Hit Rate per {window}-step Window")
+        plt.xlabel("Window Index")
+        plt.ylabel("Hit Rate")
+        wr_path = os.path.join(output_dir, f"hit_rate_window_{timestamp}.png")
+        plt.savefig(wr_path, dpi=100)
+        plt.close()
+        logger.info(f"Saved hit-rate window plot: {wr_path}")
+        plot_paths["hit_rate_window"] = wr_path
+
+    # --- 5) Reward Distribution ---
+    if rewards:
+        plt.figure(figsize=(6, 4))
+        plt.hist(rewards, bins=30, color="purple", alpha=0.7)
+        plt.title("Reward Distribution")
+        plt.xlabel("Reward")
+        plt.ylabel("Frequency")
+        rd_path = os.path.join(output_dir, f"reward_dist_{timestamp}.png")
+        plt.savefig(rd_path, dpi=100)
+        plt.close()
+        logger.info(f"Saved reward distribution: {rd_path}")
+        plot_paths["reward_distribution"] = rd_path
+
+    # --- 6) Q-Value Statistics ---
+    if q_hist:
+        arr = np.array(q_hist)
+        steps_q = np.arange(arr.shape[0])
         plt.figure(figsize=(10, 4))
-        plt.plot(entropies, label="Policy Entropy")
-        plt.xlabel("Training Step")
-        plt.ylabel("Entropy")
-        plt.title(f"{title_prefix}: Policy Entropy")
-        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.plot(steps_q, arr.mean(axis=1), label="Mean Q")
+        plt.plot(steps_q, arr.max(axis=1), "--", label="Max Q")
+        plt.plot(steps_q, arr.min(axis=1), ":", label="Min Q")
+        plt.title("Q-Value Statistics Over Time")
+        plt.xlabel("Step")
+        plt.ylabel("Q-Value")
         plt.legend()
-        entropy_path = os.path.join(output_dir, f"policy_entropy_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-        plt.savefig(entropy_path, dpi=100)
+        plt.grid(True, linestyle="--", alpha=0.7)
+        qv_path = os.path.join(output_dir, f"q_values_{timestamp}.png")
+        plt.savefig(qv_path, dpi=100)
         plt.close()
-        plot_paths['policy_entropy'] = entropy_path
-        logger.info(f"Policy entropy plot saved to {entropy_path}")
+        logger.info(f"Saved Q-value stats: {qv_path}")
+        plot_paths["q_value_stats"] = qv_path
 
-    # Plot episode rewards if available and not already plotted
-    episode_rewards = training_history.get('episode_rewards')
-    if episode_rewards is not None and len(episode_rewards) > 0:
-        if episode_rewards_plot_path:
-            plot_paths['episode_rewards'] = episode_rewards_plot_path
-        else:
-            plot_paths['episode_rewards'] = plot_rewards_over_episodes(
-                episode_rewards, output_dir=output_dir, title=f"{title_prefix}: Rewards Over Episodes"
-            )
+    # --- 7) Inference Time CDF ---
+    if inf_times:
+        sorted_t = np.sort(inf_times)
+        cdf = np.arange(len(sorted_t)) / len(sorted_t)
+        plt.figure(figsize=(6, 4))
+        plt.plot(sorted_t, cdf, marker=".", linestyle="-")
+        plt.title("Inference Time CDF")
+        plt.xlabel("Inference (ms)")
+        plt.ylabel("CDF")
+        it_path = os.path.join(output_dir, f"inference_cdf_{timestamp}.png")
+        plt.savefig(it_path, dpi=100)
+        plt.close()
+        logger.info(f"Saved inference time CDF: {it_path}")
+        plot_paths["inference_cdf"] = it_path
 
     return plot_paths
