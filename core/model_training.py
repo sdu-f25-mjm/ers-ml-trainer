@@ -191,6 +191,12 @@ def train_cache_model(
         params["batch_size"] = batch_size
     if learning_rate:
         params["learning_rate"] = learning_rate
+    # Ensure PPO's rollout length does not exceed episode length (max_queries)
+    if algo_str == "ppo":
+        original_n = params["n_steps"]
+        params["n_steps"] = min(params["n_steps"], max_queries)
+        if params["n_steps"] != original_n:
+            logger.info(f"Adjusted PPO n_steps from {original_n} → {params['n_steps']} to match max_queries={max_queries}")
     logger.info(f"Hyperparameters: {params}")
 
     # 3) build & wrap train_env
