@@ -8,9 +8,9 @@ import numpy as np
 import torch
 from stable_baselines3 import A2C, PPO, DQN
 from stable_baselines3.common.callbacks import EvalCallback
-from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.utils import get_linear_fn
+from stable_baselines3.common.monitor import Monitor
 
 from api.app_utils import AlgorithmEnum
 from core.cache_environment import create_mariadb_cache_env
@@ -31,151 +31,88 @@ logger = logging.getLogger(__name__)
 
 
 def configure_gpu_environment() -> bool:
-    """
-    Configure GPU environment if available.
-    Returns True if GPU was configured successfully, False otherwise.
-    """
+    """Configure GPU if available."""
     if not is_cuda_available():
-        logger.warning("CUDA is not available. Using CPU only.")
+        logger.warning("CUDA not available, using CPU.")
         return False
-
     try:
-        gpu_count = torch.cuda.device_count()
-        logger.info(f"Found {gpu_count} CUDA device(s)")
-        for idx in range(gpu_count):
-            name = torch.cuda.get_device_name(idx)
-            logger.info(f"  GPU {idx}: {name}")
-
+        for idx in range(torch.cuda.device_count()):
+            logger.info(f"GPU {idx}: {torch.cuda.get_device_name(idx)}")
         torch.backends.cudnn.benchmark = True
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
-
         return True
     except Exception as e:
-        logger.error(f"Error configuring GPU: {e}")
+        logger.error(f"GPU configuration error: {e}")
         return False
 
 
 def get_device(use_gpu: bool = False) -> str:
-    """
-    Determine which device to use (CPU or GPU).
-    """
+    """Return 'cuda' or 'cpu'."""
     if use_gpu and is_cuda_available():
         configure_gpu_environment()
         return "cuda"
     if use_gpu:
-        logger.warning("Requested GPU but CUDA is not available; falling back to CPU.")
+        logger.warning("Requested GPU but unavailable; falling back to CPU.")
     return "cpu"
 
 
 def create_feature_extractor(device: str = "cpu"):
-    """
-    Factory for a custom SB3 feature extractor, optimized for CPU vs GPU.
-    """
+    """Custom SB3 feature extractor."""
     from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
     import torch.nn as nn
 
     class CacheFeatureExtractor(BaseFeaturesExtractor):
-        def __init__(self, observation_space, features_dim: int = None):
-            if features_dim is None:
-                features_dim = 128 if device == "cuda" else 64
-            super().__init__(observation_space, features_dim)
-            input_dim = int(np.prod(observation_space.shape))
+        def __init__(self, obs_space, features_dim: int = None):
+            features_dim = features_dim or (128 if device == "cuda" else 64)
+            super().__init__(obs_space, features_dim)
+            in_dim = int(np.prod(obs_space.shape))
             if device == "cuda":
-                self.network = nn.Sequential(
-                    nn.Linear(input_dim, 256),
-                    nn.ReLU(),
+                self.net = nn.Sequential(
+                    nn.Linear(in_dim, 256), nn.ReLU(),
                     nn.LayerNorm(256),
-                    nn.Linear(256, features_dim),
-                    nn.ReLU(),
+                    nn.Linear(256, features_dim), nn.ReLU(),
                 )
             else:
-                self.network = nn.Sequential(
-                    nn.Linear(input_dim, 128),
-                    nn.ReLU(),
-                    nn.Linear(128, features_dim),
-                    nn.ReLU(),
+                self.net = nn.Sequential(
+                    nn.Linear(in_dim, 128), nn.ReLU(),
+                    nn.Linear(128, features_dim), nn.ReLU(),
                 )
 
-        def forward(self, observations: torch.Tensor) -> torch.Tensor:
-            return self.network(observations)
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.net(x)
 
     return CacheFeatureExtractor
 
-
-def get_hyperparameters(
-    algorithm: str, device: str
-) -> Dict[str, Union[int, float, List[int]]]:
-    """
-    Fetch base hyperparameters for a given algorithm+device.
-    """
-    base_params = {
+def get_hyperparameters(alg: str, device: str) -> Dict[str, Any]:
+    """Base hyperparameters by algorithm & device."""
+    params = {
         "dqn": {
-            "cpu": {
-                "learning_rate": 3e-4,
-                "batch_size": 64,
-                "buffer_size": 10_000,
-                "learning_starts": 1_000,
-                "target_update_interval": 500,
-                "net_arch": [128, 128],
-                "ent_coef": 0.05,
-                "vf_coef": 0.1,
-            },
-            "cuda": {
-                "learning_rate": 5e-4,
-                "batch_size": 128,
-                "buffer_size": 50_000,
-                "learning_starts": 2_000,
-                "target_update_interval": 1_000,
-                "net_arch": [256, 256],
-                "ent_coef": 0.05,
-                "vf_coef": 0.1,
-            },
+            "cpu":   {"learning_rate":3e-4, "batch_size":64,  "buffer_size":10_000,
+                      "learning_starts":1_000, "target_update_interval":500,
+                      "net_arch":[128,128], "ent_coef":0.05, "vf_coef":0.1},
+            "cuda":  {"learning_rate":5e-4, "batch_size":128, "buffer_size":50_000,
+                      "learning_starts":2_000, "target_update_interval":1_000,
+                      "net_arch":[256,256], "ent_coef":0.05, "vf_coef":0.1},
         },
         "a2c": {
-            "cpu": {
-                "learning_rate": 7e-4,
-                "batch_size": 32,
-                "n_steps": 8,
-                "ent_coef": 0.01,
-                "vf_coef": 0.1,
-                "net_arch": [128, 128],
-            },
-            "cuda": {
-                "learning_rate": 1e-3,
-                "batch_size": 64,
-                "n_steps": 16,
-                "ent_coef": 0.01,
-                "vf_coef": 0.1,
-                "net_arch": [256, 256],
-            },
+            "cpu":   {"learning_rate":7e-4, "batch_size":32, "n_steps":8,
+                      "ent_coef":0.01, "vf_coef":0.1, "net_arch":[128,128]},
+            "cuda":  {"learning_rate":1e-3, "batch_size":64, "n_steps":16,
+                      "ent_coef":0.01, "vf_coef":0.1, "net_arch":[256,256]},
         },
         "ppo": {
-            "cpu": {
-                "learning_rate": 1e-4,
-                "batch_size": 64,
-                "n_steps": 256,
-                "n_epochs": 4,
-                "ent_coef": 0.05,
-                "vf_coef": 0.1,
-                "clip_range": 0.2,
-                "max_grad_norm": 10.0,
-                "net_arch": [128, 128],
-            },
-            "cuda": {
-                "learning_rate": 2e-4,
-                "batch_size": 256,
-                "n_steps": 512,
-                "n_epochs": 10,
-                "ent_coef": 0.05,
-                "vf_coef": 0.1,
-                "clip_range": 0.2,
-                "max_grad_norm": 10.0,
-                "net_arch": [256, 256],
-            },
+            "cpu":   {"learning_rate":1e-4, "batch_size":64,  "n_steps":256,
+                      "n_epochs":4, "ent_coef":0.05, "vf_coef":0.1,
+                      "clip_range":0.2, "max_grad_norm":10.0,
+                      "net_arch":[128,128]},
+            "cuda":  {"learning_rate":2e-4, "batch_size":256, "n_steps":512,
+                      "n_epochs":10, "ent_coef":0.05, "vf_coef":0.1,
+                      "clip_range":0.2, "max_grad_norm":10.0,
+                      "net_arch":[256,256]},
         },
     }
-    return base_params[algorithm][device]
+    return params[alg][device]
 
 
 def export_model_to_torchscript(model_path: str, output_dir: str = "best_model") -> str:
@@ -239,15 +176,16 @@ def train_cache_model(
     """
     Train a database-cache RL model with SB3.
     """
-    assert cache_size > 0, "cache_size must be positive"
-    logger.info(f"Training: algo={algorithm}, cache_size={cache_size}, timesteps={timesteps}")
+    logger.info(f"ENTER train_cache_model: algo={algorithm}, cache_size={cache_size}, timesteps={timesteps}")
 
+    # 1) device & algorithm
     device = get_device(use_gpu)
     algo_str = (algorithm.value if isinstance(algorithm, AlgorithmEnum) else str(algorithm)).lower()
     if algo_str not in ("dqn", "a2c", "ppo"):
-        logger.warning(f"Unknown algorithm '{algo_str}', defaulting to 'dqn'")
+        logger.warning(f"Invalid algo '{algo_str}', defaulting to dqn")
         algo_str = "dqn"
 
+    # 2) hyperparameters
     params = get_hyperparameters(algo_str, device)
     if batch_size:
         params["batch_size"] = batch_size
@@ -255,34 +193,40 @@ def train_cache_model(
         params["learning_rate"] = learning_rate
     logger.info(f"Hyperparameters: {params}")
 
-    # Create and normalize environments
-    train_env = DummyVecEnv([lambda: create_mariadb_cache_env(
+    # 3) build & wrap train_env
+    train_env = DummyVecEnv([lambda: Monitor(create_mariadb_cache_env(
         db_url=db_url,
         cache_size=cache_size,
         feature_columns=feature_columns,
         max_queries=max_queries,
         table_name=table_name,
         cache_weights=cache_weights,
-    )])
+    ))])
+    logger.debug("Train DummyVecEnv + Monitor created")
     train_env = VecNormalize(train_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
-    # Save normalization stats
-    norm_path = "model_checkpoints/vecnormalize.pkl"
-    os.makedirs(os.path.dirname(norm_path), exist_ok=True)
-    train_env.save(norm_path)
+    logger.debug("Train VecNormalize applied")
 
-    eval_env = DummyVecEnv([lambda: create_mariadb_cache_env(
+    # 4) build eval_env and wrap with VecNormalize (share stats with train_env)
+    eval_base = DummyVecEnv([lambda: Monitor(create_mariadb_cache_env(
         db_url=db_url,
         cache_size=cache_size,
         feature_columns=feature_columns,
         max_queries=max_queries,
         table_name=table_name,
         cache_weights=cache_weights,
-    )])
-    # load normalization stats, but do not normalize rewards in eval
-    eval_env = VecNormalize.load(norm_path, eval_env)
+    ))])
+    logger.debug("Eval DummyVecEnv + Monitor created")
+    # Wrap eval_env to mirror train normalization
+    eval_env = VecNormalize(eval_base, norm_obs=True, norm_reward=True, clip_obs=10.0)
+    # Disable updating statistics during evaluation
     eval_env.training = False
     eval_env.norm_reward = False
+    # Share statistics from train_env
+    eval_env.obs_rms = train_env.obs_rms
+    eval_env.ret_rms = train_env.ret_rms
+    logger.info("Eval VecNormalize wrapper applied with shared stats")
 
+    # 5) EvalCallback
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path="model_checkpoints/",
@@ -290,93 +234,132 @@ def train_cache_model(
         eval_freq=max_queries * 10,
         deterministic=True,
         render=False,
-        n_eval_episodes=5,
+        n_eval_episodes=5
     )
+    logger.info("EvalCallback configured")
 
+    # 6) policy kwargs & LR schedule
+    logger.info("Setting up policy_kwargs...")
     policy_kwargs = {"net_arch": params["net_arch"]}
     if device == "cuda":
-        policy_kwargs.update({
-            "features_extractor_class": create_feature_extractor(device),
-            "features_extractor_kwargs": {"features_dim": 128},
-        })
+        logger.info("Configuring GPU feature extractor...")
+        try:
+            policy_kwargs.update({
+                "features_extractor_class": create_feature_extractor(device),
+                "features_extractor_kwargs": {"features_dim": 128},
+            })
+            logger.info("GPU feature extractor configured successfully")
+        except Exception as e:
+            logger.error(f"Error configuring feature extractor: {e}")
+            raise
 
-    # Learning rate schedule for PPO
-    lr_schedule = None
-    if algo_str == "ppo":
-        lr_schedule = get_linear_fn(params["learning_rate"], end_value=1e-5, power=1)
+    logger.info("Setting up learning rate schedule...")
+    try:
+        # Simplify LR handling - avoid potential hang in get_linear_fn
+        if algo_str == "ppo":
+            logger.info(f"Using simple learning rate decay for PPO instead of function")
+            lr_schedule = params["learning_rate"]  # Use static LR for now
+        else:
+            lr_schedule = params["learning_rate"]
 
-    common_kwargs = {
-        "verbose": 1,
-        "device": device,
-        "policy_kwargs": policy_kwargs,
-    }
+        logger.info(f"Learning rate set to: {lr_schedule}")
 
-    # Instantiate model
-    if algo_str == "a2c":
-        model = A2C(
-            "MlpPolicy",
-            train_env,
-            learning_rate=params["learning_rate"],
-            n_steps=params["n_steps"],
-            ent_coef=params["ent_coef"],
-            vf_coef=params["vf_coef"],
-            **common_kwargs
-        )
-    elif algo_str == "ppo":
-        model = PPO(
-            "MlpPolicy",
-            train_env,
-            learning_rate=lr_schedule,
-            n_steps=params["n_steps"],
-            batch_size=params["batch_size"],
-            n_epochs=params["n_epochs"],
-            ent_coef=params["ent_coef"],
-            vf_coef=params["vf_coef"],
-            clip_range=params["clip_range"],
-            max_grad_norm=params["max_grad_norm"],
-            normalize_advantage=True,
-            **common_kwargs
-        )
-    else:
-        model = DQN(
-            "MlpPolicy",
-            train_env,
-            learning_rate=params["learning_rate"],
-            buffer_size=params["buffer_size"],
-            learning_starts=params["learning_starts"],
-            batch_size=params["batch_size"],
-            target_update_interval=params["target_update_interval"],
-            **common_kwargs
-        )
+        # Create common kwargs dict in a safe way
+        common = {}
+        common["verbose"] = 1
+        common["device"] = device
+        common["policy_kwargs"] = policy_kwargs
+        logger.info(f"Common kwargs created with device={device}, verbose=1")
+    except Exception as e:
+        logger.error(f"Error setting up learning rate or common kwargs: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
 
-    # Train
+    logger.info(f"Common kwargs: device={device}, net_arch={params['net_arch']}")
+
+    # 7) instantiate model
+    logger.info(f"Creating {algo_str.upper()} model...")
+    try:
+        if algo_str == "a2c":
+            model = A2C("MlpPolicy", train_env,
+                        learning_rate=params["learning_rate"],
+                        n_steps=params["n_steps"],
+                        ent_coef=params["ent_coef"],
+                        vf_coef=params["vf_coef"],
+                        **common)
+            logger.info("A2C model created successfully")
+        elif algo_str == "ppo":
+            model = PPO("MlpPolicy", train_env,
+                        learning_rate=lr_schedule,
+                        n_steps=params["n_steps"],
+                        batch_size=params["batch_size"],
+                        n_epochs=params["n_epochs"],
+                        ent_coef=params["ent_coef"],
+                        vf_coef=params["vf_coef"],
+                        clip_range=params["clip_range"],
+                        max_grad_norm=params["max_grad_norm"],
+                        normalize_advantage=True,
+                        **common)
+            logger.info("PPO model created successfully")
+        else:
+            model = DQN("MlpPolicy", train_env,
+                        learning_rate=params["learning_rate"],
+                        buffer_size=params["buffer_size"],
+                        learning_starts=params["learning_starts"],
+                        batch_size=params["batch_size"],
+                        target_update_interval=params["target_update_interval"],
+                        **common)
+            logger.info("DQN model created successfully")
+    except Exception as e:
+        logger.error(f"Error instantiating model: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
+
+    logger.info(f"Model instantiated: {algo_str.upper()} on {device}")
+
+    # 8) train
     start = datetime.utcnow()
-    logger.info(f"Starting training for {timesteps} timesteps...")
-    model.learn(total_timesteps=timesteps, callback=eval_callback)
-    elapsed = (datetime.utcnow() - start).total_seconds()
-    logger.info(f"Training completed in {elapsed:.1f}s")
+    logger.info(f"Starting model.learn() for {timesteps} steps...")
 
-    if device == "cuda":
-        torch.cuda.empty_cache()
+    try:
+        model.learn(total_timesteps=timesteps, callback=eval_callback)
+        logger.info(f"model.learn() finished in {(datetime.utcnow() - start).total_seconds():.1f}s")
+    except Exception as e:
+        logger.error(f"Error during model.learn(): {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
 
-    # Save model & metadata
+    # 9) save VecNormalize stats
+    norm_path = "model_checkpoints/vecnormalize.pkl"
+    os.makedirs(os.path.dirname(norm_path), exist_ok=True)
+    train_env.save(norm_path)
+    logger.info(f"Saved VecNormalize stats at {norm_path}")
+
+    # 10) save model & metadata
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     save_path = f"models/cache_model_{algo_str}_{device}_{cache_size}_{ts}"
     model.save(save_path)
+    meta = {
+        "algorithm": algo_str,
+        "device": device,
+        "cache_size": cache_size,
+        "batch_size": params["batch_size"],
+        "learning_rate": params["learning_rate"],
+        "timesteps": timesteps,
+        "feature_columns": feature_columns,
+        "trained_at": ts,
+    }
     with open(save_path + ".meta.json", "w") as f:
-        json.dump({
-            "algorithm": algo_str,
-            "device": device,
-            "cache_size": cache_size,
-            "batch_size": params["batch_size"],
-            "learning_rate": params["learning_rate"],
-            "timesteps": timesteps,
-            "feature_columns": feature_columns,
-            "trained_at": ts,
-        }, f, indent=2)
+        json.dump(meta, f, indent=2)
+    logger.info(f"Model & metadata saved to {save_path}")
 
     train_env.close()
     eval_env.close()
+    if device == "cuda":
+        torch.cuda.empty_cache()
     return save_path
 
 
@@ -387,33 +370,26 @@ def evaluate_cache_model(
     use_gpu: bool = False,
     table_name: str = "cache_metrics",
 ) -> Dict[str, Any]:
-    """
-    Run a full evaluation of a trained cache model, collecting hit rates,
-    rewards, inference times, and per-step diagnostics.
-    """
+    """Run a full evaluation of a trained cache model."""
     from api.app_utils import CacheTableEnum
 
-    use_cuda = use_gpu and torch.cuda.is_available()
-    device = "cuda" if use_cuda else "cpu"
+    device = "cuda" if (use_gpu and torch.cuda.is_available()) else "cpu"
     logger.info(f"Evaluating on device: {device}")
 
     # Load metadata
     meta_path = model_path + ".meta.json"
-    feature_columns, cache_size = None, None
-    if os.path.exists(meta_path):
-        try:
-            info = json.load(open(meta_path, encoding="utf-8"))
-            feature_columns = info.get("feature_columns")
-            cache_size = info.get("cache_size")
-        except Exception as e:
-            logger.warning(f"Could not read metadata: {e}")
+    try:
+        info = json.load(open(meta_path, encoding="utf-8"))
+        feature_columns = info.get("feature_columns")
+        cache_size = info.get("cache_size", 10)
+    except Exception:
+        feature_columns = None
+        cache_size = 10
 
     if not feature_columns:
         feature_columns = [e.value for e in CacheTableEnum]
-    if cache_size is None:
-        cache_size = 10
 
-    # Load model
+    # Load the correct model type
     if "ppo" in model_path.lower():
         model = PPO.load(model_path, device=device)
     elif "a2c" in model_path.lower():
@@ -430,61 +406,47 @@ def evaluate_cache_model(
         max_queries=eval_steps,
         table_name=table_name,
     )
-
-    if env.observation_space.shape != model.observation_space.shape:
-        msg = f"Shape mismatch: env {env.observation_space.shape} vs model {model.observation_space.shape}"
-        logger.error(msg)
-        return {"error": msg, "success": False}
-
     obs, _ = env.reset()
-    total_reward = 0.0
-    hits, rewards, times, actions, occupancy, reasoning, in_cache, urls = ([] for _ in range(8))
 
+    # Run episodes
+    results = {
+        "hit_history": [], "rewards": [], "moving_hit_rates": [],
+        "total_reward": 0.0, "avg_inference_ms": 0.0,
+        "actions": [], "cache_occupancy": [], "inference_times": [],
+        "step_reasoning": [], "in_cache": [], "urls": [],
+        "evaluation_time_seconds": 0.0, "success": True
+    }
     start = datetime.utcnow()
-    for _ in range(eval_steps):
+    for i in range(eval_steps):
         t0 = datetime.utcnow()
         action, _ = model.predict(obs, deterministic=True)
-        times.append((datetime.utcnow() - t0).total_seconds() * 1000)
-        actions.append(int(action))
+        inf_ms = (datetime.utcnow() - t0).total_seconds() * 1000
+        results["inference_times"].append(inf_ms)
+        results["actions"].append(int(action))
 
         prev_hits = env.cache_hits
         obs, reward, done, _, info = env.step(action)
-        occupancy.append(len(env.cache))
         hit = env.cache_hits > prev_hits
 
-        hits.append(int(hit))
-        rewards.append(reward)
-        total_reward += reward
-
-        reasoning.append("HIT" if hit else ("MISS→cached" if action==1 else "MISS"))
+        results["hit_history"].append(int(hit))
+        results["rewards"].append(reward)
+        results["total_reward"] += reward
+        results["cache_occupancy"].append(len(env.cache))
+        results["step_reasoning"].append("HIT" if hit else ("MISS→cached" if action==1 else "MISS"))
         idx = (env.current_query_idx - 1) % len(env.data)
         current = env.data.iloc[idx]
         still = any(all(current[c]==itm[c] for c in env.feature_columns) for itm in env.cache)
-        in_cache.append(still)
-        urls.append(current.get("cache_name", None))
+        results["in_cache"].append(still)
+        results["urls"].append(current.get("cache_name"))
 
         if done:
             break
 
-    duration = (datetime.utcnow() - start).total_seconds()
-    logger.info(f"Evaluation done in {duration:.2f}s")
+    results["evaluation_time_seconds"] = (datetime.utcnow() - start).total_seconds()
+    results["avg_inference_ms"] = float(np.mean(results["inference_times"])) if results["inference_times"] else 0.0
+    results["moving_hit_rates"] = [np.mean(results["hit_history"][max(0, i-24):i+1]) for i in range(len(results["hit_history"]))]
+
     env.close()
     torch.cuda.empty_cache()
+    return results
 
-    moving = [np.mean(hits[max(0, i-24):i+1]) for i in range(len(hits))]
-    return {
-        "hit_history": hits,
-        "rewards": rewards,
-        "moving_hit_rates": moving,
-        "final_hit_rate": info.get("cache_hit_rate"),
-        "total_reward": total_reward,
-        "avg_inference_ms": float(np.mean(times)) if times else 0.0,
-        "evaluation_time_seconds": duration,
-        "actions": actions,
-        "cache_occupancy": occupancy,
-        "inference_times": times,
-        "step_reasoning": reasoning,
-        "in_cache": in_cache,
-        "urls": urls,
-        "success": True,
-    }

@@ -133,8 +133,17 @@ class MariaDBCacheEnvironment(gym.Env):
             self.feature_columns = self._get_default_feature_columns()
         self.logger.info(f"Feature columns: {self.feature_columns}")
 
+        # --- Add debug: print first few rows of data for inspection ---
+        self.logger.info(f"First 3 rows of loaded data:\n{self.data[self.feature_columns].head(3).to_string(index=False)}")
+
+        # --- Add debug: print cache_size and check ---
+        self.logger.info(f"Configured cache_size: {self.cache_size}")
+        if self.cache_size < 1:
+            self.logger.error("Cache size must be at least 1. Please check the value passed from the frontend.")
+
         # Gym spaces
         obs_dim = len(self.feature_columns) + self.cache_size
+        self.logger.debug(f"Observation space dimension: {obs_dim} (features: {len(self.feature_columns)}, cache_size: {self.cache_size})")
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(obs_dim,), dtype=np.float32)
         self.action_space = spaces.Discrete(2)  # 0 = skip, 1 = cache
 
@@ -144,6 +153,9 @@ class MariaDBCacheEnvironment(gym.Env):
         self.queries_executed = 0
         self.cache_hits = 0
         self.cache_misses = 0
+
+        # --- Add debug: confirm init complete ---
+        self.logger.info("MariaDBCacheEnvironment __init__ complete.")
 
     def _get_default_feature_columns(self) -> List[str]:
         numeric = self.data.select_dtypes(include=[np.number]).columns.tolist()
@@ -160,8 +172,12 @@ class MariaDBCacheEnvironment(gym.Env):
             f"Environment reset: max_queries={self.max_queries}, "
             f"cache_size={self.cache_size}, data_len={len(self.data)}"
         )
+        self.logger.info(seed)
         q_feat = self._get_query_features(0)
         c_feat = np.zeros(self.cache_size, dtype=np.float32)
+        self.logger.debug("Reset: returning initial observation")
+        self.logger.info("Reset complete, returning initial observation")
+        self.logger.info(f"reset() returns obs shape: {q_feat.shape} + {c_feat.shape} = {np.concatenate([q_feat, c_feat]).shape}")
         return np.concatenate([q_feat, c_feat]), {}
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, dict]:
@@ -197,8 +213,17 @@ class MariaDBCacheEnvironment(gym.Env):
 
             done = self.queries_executed >= self.max_queries
 
-            if self.queries_executed % 100 == 0 or done:
-                self.logger.info(f"Step {self.queries_executed}/{self.max_queries}, hit={hit}, done={done}")
+            # Add detailed debug logging for every step (throttle to every 1 step for now)
+            self.logger.debug(
+                f"Step {self.queries_executed}/{self.max_queries} | "
+                f"Current idx: {self.current_query_idx} | "
+                f"Cache size: {len(self.cache)} | "
+                f"Hit: {hit} | "
+                f"Reward: {reward:.3f} | "
+                f"Done: {done}"
+            )
+
+            self.logger.debug(f"step() returns obs shape: {obs.shape}, reward: {reward}, done: {done}")
 
             info = {
                 "cache_hit_rate": self.cache_hits / max(1, self.queries_executed),
