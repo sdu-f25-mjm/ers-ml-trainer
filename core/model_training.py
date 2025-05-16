@@ -433,26 +433,68 @@ def train_cache_model(
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     save_path = f"models/cache_model_{algo_str}_{device}_{cache_size}_{ts}"
     model.save(save_path)
+    logger.info(f"Model saved to {save_path}")
+
+    # Create comprehensive metadata
     meta = {
+        # Basic configuration
         "algorithm": algo_str,
         "device": device,
         "cache_size": cache_size,
-        "batch_size": params["batch_size"],
-        "learning_rate": params["learning_rate"],
+        "max_queries": max_queries,
+        "table_name": table_name,
         "timesteps": timesteps,
         "feature_columns": feature_columns,
+        "cache_weights": cache_weights,
         "trained_at": ts,
+
+        # Database info (sanitized)
+        "db_type": db_url.split("://")[0] if "://" in db_url else "unknown",
+
+        # Training hyperparameters
+        "hyperparameters": {
+            "batch_size": params["batch_size"],
+            "learning_rate": params["learning_rate"],
+        },
+
+        # Algorithm-specific parameters
+        "network_architecture": params["net_arch"],
+
+        # Performance metrics
+        "final_metrics": {
+            "reward_history": reward_history,
+            "hit_rate_history": hit_rate_history,
+            "training_duration_seconds": (datetime.utcnow() - start).total_seconds()
+        }
     }
+
+    # Add algorithm-specific parameters
+    if algo_str == "dqn":
+        meta["hyperparameters"].update({
+            "buffer_size": params["buffer_size"],
+            "learning_starts": params["learning_starts"],
+            "target_update_interval": params["target_update_interval"]
+        })
+    elif algo_str == "a2c":
+        meta["hyperparameters"].update({
+            "n_steps": params["n_steps"],
+            "ent_coef": params["ent_coef"],
+            "vf_coef": params["vf_coef"]
+        })
+    elif algo_str == "ppo":
+        meta["hyperparameters"].update({
+            "n_steps": params["n_steps"],
+            "n_epochs": params["n_epochs"],
+            "ent_coef": params["ent_coef"],
+            "vf_coef": params["vf_coef"],
+            "clip_range": params["clip_range"],
+            "max_grad_norm": params["max_grad_norm"],
+            "normalize_advantage": True
+        })
+
     with open(save_path + ".meta.json", "w") as f:
         json.dump(meta, f, indent=2)
     logger.info(f"Model & metadata saved to {save_path}")
-
-    train_env.close()
-    eval_env.close()
-    if device == "cuda":
-        torch.cuda.empty_cache()
-    return save_path
-
 
 def evaluate_cache_model(
     model_path: str,

@@ -301,37 +301,12 @@ async def export_model(model_id: str, output_dir: str = "best_model"):
             model_bytes = f.read()
         model_base64 = base64.b64encode(model_bytes).decode("utf-8")
 
-        description = model
-        model_type = model.get("metrics", {}).get("model_type") or metadata.get("model_type")
-        algorithm = model.get("metrics", {}).get("algorithm") or metadata.get("algorithm")
-        device = model.get("metrics", {}).get("device") or metadata.get("device")
-        cache_size = model.get("metrics", {}).get("cache_size") or metadata.get("cache_size")
-        batch_size = model.get("metrics", {}).get("batch_size") or metadata.get("batch_size")
-        learning_rate = model.get("metrics", {}).get("learning_rate") or metadata.get("learning_rate")
-        timesteps = model.get("metrics", {}).get("timesteps") or metadata.get("timesteps")
-        trained_at = model.get("metrics", {}).get("trained_at") or metadata.get("trained_at")
-        feature_columns = model.get("metrics", {}).get("feature_columns") or metadata.get("feature_columns")
-        input_dimension = None
-        if "observation_space_shape" in metadata:
-            shape = metadata["observation_space_shape"]
-            if isinstance(shape, (list, tuple)) and len(shape) > 0:
-                input_dimension = shape[0]
+
 
         save_best_model_base64(
             engine=engine,
-            model=os.path.basename(output_path),
-            base64=model_base64,
-            description=description,
-            type=model_type,
-            input_dimension=input_dimension,
-            algorithm=algorithm,
-            device=device,
-            cache_size=cache_size,
-            batch_size=batch_size,
-            learning_rate=learning_rate,
-            timesteps=timesteps,
-            feature_columns=feature_columns,
-            trained_at=trained_at,
+            metadata=metadata,
+            base64=model_base64
         )
         return {
             "model_id": model_id,
@@ -653,3 +628,4 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+
