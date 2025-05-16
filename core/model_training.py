@@ -9,6 +9,8 @@ import torch
 from stable_baselines3 import A2C, PPO, DQN
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from stable_baselines3.common.utils import get_linear_fn
 
 from api.app_utils import AlgorithmEnum
 from core.cache_environment import create_mariadb_cache_env
@@ -27,6 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 def configure_gpu_environment() -> bool:
     """
     Configure GPU environment if available.
@@ -43,7 +46,6 @@ def configure_gpu_environment() -> bool:
             name = torch.cuda.get_device_name(idx)
             logger.info(f"  GPU {idx}: {name}")
 
-        # Enable TF32 where available
         torch.backends.cudnn.benchmark = True
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
@@ -116,8 +118,8 @@ def get_hyperparameters(
                 "learning_starts": 1_000,
                 "target_update_interval": 500,
                 "net_arch": [128, 128],
-                "ent_coef": 0.01,        # encourage exploration
-                "vf_coef": 0.1,         # lower value loss coefficient
+                "ent_coef": 0.05,
+                "vf_coef": 0.1,
             },
             "cuda": {
                 "learning_rate": 5e-4,
@@ -126,7 +128,7 @@ def get_hyperparameters(
                 "learning_starts": 2_000,
                 "target_update_interval": 1_000,
                 "net_arch": [256, 256],
-                "ent_coef": 0.01,
+                "ent_coef": 0.05,
                 "vf_coef": 0.1,
             },
         },
@@ -150,13 +152,14 @@ def get_hyperparameters(
         },
         "ppo": {
             "cpu": {
-                "learning_rate": 1e-4,  # lower lr for stability
+                "learning_rate": 1e-4,
                 "batch_size": 64,
                 "n_steps": 256,
                 "n_epochs": 4,
-                "ent_coef": 0.02,       # boost entropy
-                "vf_coef": 0.1,         # lower value loss coef
+                "ent_coef": 0.05,
+                "vf_coef": 0.1,
                 "clip_range": 0.2,
+                "max_grad_norm": 10.0,
                 "net_arch": [128, 128],
             },
             "cuda": {
@@ -164,9 +167,10 @@ def get_hyperparameters(
                 "batch_size": 256,
                 "n_steps": 512,
                 "n_epochs": 10,
-                "ent_coef": 0.02,
+                "ent_coef": 0.05,
                 "vf_coef": 0.1,
                 "clip_range": 0.2,
+                "max_grad_norm": 10.0,
                 "net_arch": [256, 256],
             },
         },
@@ -239,9 +243,7 @@ def train_cache_model(
     logger.info(f"Training: algo={algorithm}, cache_size={cache_size}, timesteps={timesteps}")
 
     device = get_device(use_gpu)
-    algo_str = (
-        algorithm.value if isinstance(algorithm, AlgorithmEnum) else str(algorithm)
-    ).lower()
+    algo_str = (algorithm.value if isinstance(algorithm, AlgorithmEnum) else str(algorithm)).lower()
     if algo_str not in ("dqn", "a2c", "ppo"):
         logger.warning(f"Unknown algorithm '{algo_str}', defaulting to 'dqn'")
         algo_str = "dqn"
@@ -253,30 +255,39 @@ def train_cache_model(
         params["learning_rate"] = learning_rate
     logger.info(f"Hyperparameters: {params}")
 
-    env = create_mariadb_cache_env(
+    # Create and normalize environments
+    train_env = DummyVecEnv([lambda: create_mariadb_cache_env(
         db_url=db_url,
         cache_size=cache_size,
         feature_columns=feature_columns,
         max_queries=max_queries,
         table_name=table_name,
         cache_weights=cache_weights,
-    )
-    eval_env = Monitor(
-        create_mariadb_cache_env(
-            db_url=db_url,
-            cache_size=cache_size,
-            feature_columns=feature_columns,
-            max_queries=max_queries,
-            table_name=table_name,
-            cache_weights=cache_weights,
-        )
-    )
+    )])
+    train_env = VecNormalize(train_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
+    # Save normalization stats
+    norm_path = "model_checkpoints/vecnormalize.pkl"
+    os.makedirs(os.path.dirname(norm_path), exist_ok=True)
+    train_env.save(norm_path)
+
+    eval_env = DummyVecEnv([lambda: create_mariadb_cache_env(
+        db_url=db_url,
+        cache_size=cache_size,
+        feature_columns=feature_columns,
+        max_queries=max_queries,
+        table_name=table_name,
+        cache_weights=cache_weights,
+    )])
+    # load normalization stats, but do not normalize rewards in eval
+    eval_env = VecNormalize.load(norm_path, eval_env)
+    eval_env.training = False
+    eval_env.norm_reward = False
 
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path="model_checkpoints/",
         log_path="model_checkpoints/",
-        eval_freq=max_queries,
+        eval_freq=max_queries * 10,
         deterministic=True,
         render=False,
         n_eval_episodes=5,
@@ -289,18 +300,22 @@ def train_cache_model(
             "features_extractor_kwargs": {"features_dim": 128},
         })
 
-    # common args
+    # Learning rate schedule for PPO
+    lr_schedule = None
+    if algo_str == "ppo":
+        lr_schedule = get_linear_fn(params["learning_rate"], end_value=1e-5, power=1)
+
     common_kwargs = {
         "verbose": 1,
         "device": device,
         "policy_kwargs": policy_kwargs,
     }
 
-    # instantiate model with entropy & value coeffs, advantage normalization
+    # Instantiate model
     if algo_str == "a2c":
         model = A2C(
             "MlpPolicy",
-            env,
+            train_env,
             learning_rate=params["learning_rate"],
             n_steps=params["n_steps"],
             ent_coef=params["ent_coef"],
@@ -310,21 +325,22 @@ def train_cache_model(
     elif algo_str == "ppo":
         model = PPO(
             "MlpPolicy",
-            env,
-            learning_rate=params["learning_rate"],
+            train_env,
+            learning_rate=lr_schedule,
             n_steps=params["n_steps"],
             batch_size=params["batch_size"],
             n_epochs=params["n_epochs"],
             ent_coef=params["ent_coef"],
             vf_coef=params["vf_coef"],
-            clip_range=params.get("clip_range", 0.2),
+            clip_range=params["clip_range"],
+            max_grad_norm=params["max_grad_norm"],
             normalize_advantage=True,
             **common_kwargs
         )
     else:
         model = DQN(
             "MlpPolicy",
-            env,
+            train_env,
             learning_rate=params["learning_rate"],
             buffer_size=params["buffer_size"],
             learning_starts=params["learning_starts"],
@@ -347,20 +363,19 @@ def train_cache_model(
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     save_path = f"models/cache_model_{algo_str}_{device}_{cache_size}_{ts}"
     model.save(save_path)
-    meta = {
-        "algorithm": algo_str,
-        "device": device,
-        "cache_size": cache_size,
-        "batch_size": params["batch_size"],
-        "learning_rate": params["learning_rate"],
-        "timesteps": timesteps,
-        "feature_columns": feature_columns,
-        "trained_at": ts,
-    }
     with open(save_path + ".meta.json", "w") as f:
-        json.dump(meta, f, indent=2)
+        json.dump({
+            "algorithm": algo_str,
+            "device": device,
+            "cache_size": cache_size,
+            "batch_size": params["batch_size"],
+            "learning_rate": params["learning_rate"],
+            "timesteps": timesteps,
+            "feature_columns": feature_columns,
+            "trained_at": ts,
+        }, f, indent=2)
 
-    env.close()
+    train_env.close()
     eval_env.close()
     return save_path
 
@@ -373,20 +388,18 @@ def evaluate_cache_model(
     table_name: str = "cache_metrics",
 ) -> Dict[str, Any]:
     """
-    Run a full evaluation of a trained cache model, collecting:
-    - hit_history, rewards, inference_times,
-    - actions, cache_occupancy, step_reasoning, in_cache, urls, moving rates.
+    Run a full evaluation of a trained cache model, collecting hit rates,
+    rewards, inference times, and per-step diagnostics.
     """
     from api.app_utils import CacheTableEnum
 
-    use_cuda = use_gpu and safe_cuda_initialization()
+    use_cuda = use_gpu and torch.cuda.is_available()
     device = "cuda" if use_cuda else "cpu"
     logger.info(f"Evaluating on device: {device}")
 
-    # load metadata
+    # Load metadata
     meta_path = model_path + ".meta.json"
-    feature_columns = None
-    cache_size = None
+    feature_columns, cache_size = None, None
     if os.path.exists(meta_path):
         try:
             info = json.load(open(meta_path, encoding="utf-8"))
@@ -400,7 +413,7 @@ def evaluate_cache_model(
     if cache_size is None:
         cache_size = 10
 
-    # load model
+    # Load model
     if "ppo" in model_path.lower():
         model = PPO.load(model_path, device=device)
     elif "a2c" in model_path.lower():
@@ -409,6 +422,7 @@ def evaluate_cache_model(
         model = DQN.load(model_path, device=device)
     logger.info("Model loaded for evaluation")
 
+    # Create eval env
     env = create_mariadb_cache_env(
         db_url=db_url,
         cache_size=cache_size,
@@ -418,29 +432,19 @@ def evaluate_cache_model(
     )
 
     if env.observation_space.shape != model.observation_space.shape:
-        msg = (f"Shape mismatch: env {env.observation_space.shape} vs model "
-               f"{model.observation_space.shape}")
+        msg = f"Shape mismatch: env {env.observation_space.shape} vs model {model.observation_space.shape}"
         logger.error(msg)
         return {"error": msg, "success": False}
 
     obs, _ = env.reset()
     total_reward = 0.0
-
-    hits: List[int] = []
-    rewards: List[float] = []
-    inference_times: List[float] = []
-    actions: List[int] = []
-    occupancy: List[int] = []
-    reasoning: List[str] = []
-    in_cache: List[bool] = []
-    urls: List[Any] = []
+    hits, rewards, times, actions, occupancy, reasoning, in_cache, urls = ([] for _ in range(8))
 
     start = datetime.utcnow()
-    for step in range(eval_steps):
+    for _ in range(eval_steps):
         t0 = datetime.utcnow()
         action, _ = model.predict(obs, deterministic=True)
-        duration_ms = (datetime.utcnow() - t0).total_seconds() * 1000
-        inference_times.append(duration_ms)
+        times.append((datetime.utcnow() - t0).total_seconds() * 1000)
         actions.append(int(action))
 
         prev_hits = env.cache_hits
@@ -452,44 +456,33 @@ def evaluate_cache_model(
         rewards.append(reward)
         total_reward += reward
 
-        # reasoning
-        if hit:
-            reasoning.append("HIT: in cache.")
-        elif action == 1:
-            reasoning.append("MISS→cached")
-        else:
-            reasoning.append("MISS: no cache")
-
-        # in_cache flag
+        reasoning.append("HIT" if hit else ("MISS→cached" if action==1 else "MISS"))
         idx = (env.current_query_idx - 1) % len(env.data)
         current = env.data.iloc[idx]
-        still = any(all(current[c] == itm[c] for c in env.feature_columns) for itm in env.cache)
+        still = any(all(current[c]==itm[c] for c in env.feature_columns) for itm in env.cache)
         in_cache.append(still)
-
         urls.append(current.get("cache_name", None))
+
         if done:
             break
 
-    eval_time = (datetime.utcnow() - start).total_seconds()
-    logger.info(f"Evaluation done in {eval_time:.2f}s")
-
+    duration = (datetime.utcnow() - start).total_seconds()
+    logger.info(f"Evaluation done in {duration:.2f}s")
     env.close()
-    if device == "cuda":
-        torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
 
-    moving = [np.mean(hits[max(0, i - 24): i + 1]) for i in range(len(hits))]
-
+    moving = [np.mean(hits[max(0, i-24):i+1]) for i in range(len(hits))]
     return {
         "hit_history": hits,
         "rewards": rewards,
         "moving_hit_rates": moving,
         "final_hit_rate": info.get("cache_hit_rate"),
         "total_reward": total_reward,
-        "avg_inference_ms": float(np.mean(inference_times)) if inference_times else 0.0,
-        "evaluation_time_seconds": eval_time,
+        "avg_inference_ms": float(np.mean(times)) if times else 0.0,
+        "evaluation_time_seconds": duration,
         "actions": actions,
         "cache_occupancy": occupancy,
-        "inference_times": inference_times,
+        "inference_times": times,
         "step_reasoning": reasoning,
         "in_cache": in_cache,
         "urls": urls,

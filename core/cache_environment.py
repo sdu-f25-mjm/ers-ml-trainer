@@ -123,7 +123,6 @@ class MariaDBCacheEnvironment(gym.Env):
 
         # Feature columns
         if feature_columns:
-            # validate
             cols = [c for c in feature_columns if c in self.data.columns]
             if not cols:
                 self.logger.warning("No valid feature columns provided; using defaults")
@@ -161,7 +160,6 @@ class MariaDBCacheEnvironment(gym.Env):
             f"Environment reset: max_queries={self.max_queries}, "
             f"cache_size={self.cache_size}, data_len={len(self.data)}"
         )
-        # initial obs
         q_feat = self._get_query_features(0)
         c_feat = np.zeros(self.cache_size, dtype=np.float32)
         return np.concatenate([q_feat, c_feat]), {}
@@ -172,7 +170,7 @@ class MariaDBCacheEnvironment(gym.Env):
             self.queries_executed += 1
             current = self.data.iloc[self.current_query_idx]
 
-            # Hit check & possible cache update
+            # Hit check & update
             hit = self._check_cache_hit(current)
             if action == 1 and not hit:
                 self._update_cache(current)
@@ -189,10 +187,10 @@ class MariaDBCacheEnvironment(gym.Env):
             # Scale/clip reward to [-1,1]
             reward = float(np.tanh(raw))
 
-            # advance pointer
+            # Advance pointer
             self.current_query_idx = (self.current_query_idx + 1) % len(self.data)
 
-            # next observation
+            # Next observation
             q_feat = self._get_query_features(self.current_query_idx)
             c_feat = self._get_cache_features()
             obs = np.concatenate([q_feat, c_feat])
