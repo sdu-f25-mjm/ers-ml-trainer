@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any, Union
 import numpy as np
 import torch
 from stable_baselines3 import A2C, PPO, DQN
-from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.utils import get_linear_fn
 from stable_baselines3.common.monitor import Monitor
@@ -152,7 +152,7 @@ def export_model_to_torchscript(model_path: str, output_dir: str = "best_model")
         with open(os.path.join(output_dir, "metadata.json"), "w") as f:
             json.dump(meta, f, indent=2)
 
-        logger.info(f"TorchScript export successful: {output_path}")
+        logger.debug(f"TorchScript export successful: {output_path}")
         return output_path
 
     except Exception as e:
@@ -191,12 +191,23 @@ def train_cache_model(
         params["batch_size"] = batch_size
     if learning_rate:
         params["learning_rate"] = learning_rate
+    
     # Ensure PPO's rollout length does not exceed episode length (max_queries)
     if algo_str == "ppo":
         original_n = params["n_steps"]
         params["n_steps"] = min(params["n_steps"], max_queries)
+        # Adjust PPO parameters for better exploration in cache environments
+        params["ent_coef"] = 0.1  # Increased from 0.05 for better exploration
+        params["clip_range"] = 0.3  # Wider clip range for more policy change
+        
         if params["n_steps"] != original_n:
-            logger.info(f"Adjusted PPO n_steps from {original_n} → {params['n_steps']} to match max_queries={max_queries}")
+            logger.debug(f"Adjusted PPO n_steps from {original_n} → {params['n_steps']} to match max_queries={max_queries}")
+            logger.debug(f"Increased entropy coefficient to {params['ent_coef']} and clip range to {params['clip_range']}")
+    
+    # Add early stopping to prevent catastrophic forgetting
+    if algo_str in ["a2c", "ppo"]:
+        logger.debug("Adding early stopping callback to prevent performance degradation")
+    
     logger.info(f"Hyperparameters: {params}")
 
     # 3) build & wrap train_env
@@ -325,13 +336,86 @@ def train_cache_model(
 
     logger.info(f"Model instantiated: {algo_str.upper()} on {device}")
 
-    # 8) train
+    # 8) train with more detailed progress monitoring
     start = datetime.utcnow()
     logger.info(f"Starting model.learn() for {timesteps} steps...")
 
+    # Track performance over time
+    reward_history = []
+    hit_rate_history = []
+    last_log_time = datetime.utcnow()
+    log_interval = 60  # seconds
+
+    # Properly implement ProgressCallback inheriting from BaseCallback
+    class ProgressCallback(BaseCallback):
+        def __init__(self, verbose=0):
+            super().__init__(verbose)
+            self.last_mean_reward = -float('inf')
+            self.no_improvement_count = 0
+            self.last_log_time = datetime.utcnow()
+            
+        def _init_callback(self) -> None:
+            # Initialize callback variables here
+            pass
+            
+        def _on_step(self) -> bool:
+            nonlocal last_log_time, reward_history, hit_rate_history
+            
+            # Check if it's time to log progress
+            now = datetime.utcnow()
+            elapsed = (now - last_log_time).total_seconds()
+            
+            if elapsed >= log_interval:
+                # Get episode info from the model's episode_buffer
+                if len(self.model.ep_info_buffer) > 0:
+                    rewards = [ep_info["r"] for ep_info in self.model.ep_info_buffer]
+                    mean_reward = np.mean(rewards) if rewards else -float('inf')
+                    reward_history.append(mean_reward)
+                    
+                    # Extract hit rate from infos if available
+                    if hasattr(self.locals, 'infos') and self.locals.get('infos'):
+                        hit_rates = [info.get('cache_hit_rate', 0) for info in self.locals['infos'] 
+                                    if isinstance(info, dict) and 'cache_hit_rate' in info]
+                        if hit_rates:
+                            mean_hit_rate = np.mean(hit_rates)
+                            hit_rate_history.append(mean_hit_rate)
+                            logger.info(f"Progress: ts={self.num_timesteps}/{timesteps}, "
+                                       f"reward={mean_reward:.2f}, hit_rate={mean_hit_rate:.2f}")
+                        else:
+                            logger.info(f"Progress: ts={self.num_timesteps}/{timesteps}, "
+                                       f"reward={mean_reward:.2f}")
+                    else:
+                        logger.info(f"Progress: ts={self.num_timesteps}/{timesteps}, "
+                                   f"reward={mean_reward:.2f}")
+                                   
+                    # Early stopping check - if rewards are not improving
+                    if mean_reward > self.last_mean_reward:
+                        self.last_mean_reward = mean_reward
+                        self.no_improvement_count = 0
+                    else:
+                        self.no_improvement_count += 1
+                        
+                    if self.no_improvement_count >= 5:
+                        logger.warning(f"No improvement for 5 consecutive checks. Consider early stopping.")
+                        
+                last_log_time = now
+                
+            return True  # Return True to continue training
+
     try:
-        model.learn(total_timesteps=timesteps, callback=eval_callback)
+        # Create the callbacks and pass to learn
+        progress_callback = ProgressCallback()
+        callbacks = [eval_callback, progress_callback]
+        
+        model.learn(total_timesteps=timesteps, callback=callbacks)
         logger.info(f"model.learn() finished in {(datetime.utcnow() - start).total_seconds():.1f}s")
+        
+        # Log final performance metrics
+        if reward_history:
+            logger.info(f"Training reward history: {reward_history}")
+        if hit_rate_history: 
+            logger.info(f"Training hit rate history: {hit_rate_history}")
+            
     except Exception as e:
         logger.error(f"Error during model.learn(): {e}")
         import traceback

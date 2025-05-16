@@ -131,10 +131,10 @@ class MariaDBCacheEnvironment(gym.Env):
                 self.feature_columns = cols
         else:
             self.feature_columns = self._get_default_feature_columns()
-        self.logger.info(f"Feature columns: {self.feature_columns}")
+        self.logger.debug(f"Feature columns: {self.feature_columns}")
 
         # --- Add debug: print first few rows of data for inspection ---
-        self.logger.info(f"First 3 rows of loaded data:\n{self.data[self.feature_columns].head(3).to_string(index=False)}")
+        self.logger.debug(f"First 3 rows of loaded data:\n{self.data[self.feature_columns].head(3).to_string(index=False)}")
 
         # --- Add debug: print cache_size and check ---
         self.logger.info(f"Configured cache_size: {self.cache_size}")
@@ -191,17 +191,34 @@ class MariaDBCacheEnvironment(gym.Env):
             if action == 1 and not hit:
                 self._update_cache(current)
 
-            # Compute raw reward
+            # Enhanced reward calculation with intermediate components
+            base_reward = 1.0 if hit else -1.0
+            reward_components = {"base": base_reward}
+            
+            # Add weighted components if specified
             if self.cache_weights:
-                raw = 0.0
+                weighted_reward = 0.0
                 for col in self.cache_weights:
-                    raw += float(current.get(col, 0.0))
-                raw = raw if hit else -raw
+                    val = float(current.get(col, 0.0))
+                    weighted_reward += val
+                    reward_components[col] = val
+                
+                # Scale reward by weights but maintain sign from hit/miss
+                reward_sign = 1.0 if hit else -1.0
+                raw_reward = abs(weighted_reward) * reward_sign
             else:
-                raw = 1.0 if hit else -1.0
-
-            # Scale/clip reward to [-1,1]
-            reward = float(np.tanh(raw))
+                raw_reward = base_reward
+            
+            # Scale reward and add small positive value for cache hit
+            # to help agent break out of all-negative reward scenarios
+            if hit:
+                # Enhanced reward for cache hit (larger bonus for valuable hits)
+                reward = float(np.tanh(raw_reward)) + 0.1  # Small bonus for any hit
+            else:
+                # Soften penalty for misses to avoid discouraging exploration
+                reward = float(np.tanh(raw_reward)) * 0.95
+                
+            reward_components["final"] = reward
 
             # Advance pointer
             self.current_query_idx = (self.current_query_idx + 1) % len(self.data)
@@ -213,23 +230,34 @@ class MariaDBCacheEnvironment(gym.Env):
 
             done = self.queries_executed >= self.max_queries
 
-            # Add detailed debug logging for every step (throttle to every 1 step for now)
-            self.logger.debug(
-                f"Step {self.queries_executed}/{self.max_queries} | "
-                f"Current idx: {self.current_query_idx} | "
-                f"Cache size: {len(self.cache)} | "
-                f"Hit: {hit} | "
-                f"Reward: {reward:.3f} | "
-                f"Done: {done}"
-            )
+            # Enhanced debug logging with cache contents
+            if self.queries_executed % 10 == 0 or done:
+                cache_keys = [item.get('cache_key', 'unknown') for item in self.cache[:5]]
+                cache_preview = ", ".join(str(k) for k in cache_keys)
+                hit_rate = self.cache_hits / max(1, self.queries_executed)
+                self.logger.debug(
+                    f"Step {self.queries_executed}/{self.max_queries} | "
+                    f"Hit: {hit} | Rate: {hit_rate:.2f} | "
+                    f"Action: {action} | Reward: {reward:.3f} | "
+                    f"Cache [{len(self.cache)}/{self.cache_size}]: {cache_preview}..."
+                )
 
-            self.logger.debug(f"step() returns obs shape: {obs.shape}, reward: {reward}, done: {done}")
+            # Periodic INFO level logging for key metrics
+            if self.queries_executed % 100 == 0 or done:
+                hit_rate = self.cache_hits / max(1, self.queries_executed)
+                self.logger.info(
+                    f"Cache stats: hits={self.cache_hits}/{self.queries_executed} "
+                    f"({hit_rate:.2f}) | size={len(self.cache)}/{self.cache_size}"
+                )
 
             info = {
                 "cache_hit_rate": self.cache_hits / max(1, self.queries_executed),
                 "cache_miss_rate": self.cache_misses / max(1, self.queries_executed),
                 "cache_size": len(self.cache),
                 "queries_executed": self.queries_executed,
+                "hit": hit,
+                "action": int(action),
+                "reward_components": reward_components,
             }
             return obs, reward, done, False, info
 
@@ -264,9 +292,17 @@ class MariaDBCacheEnvironment(gym.Env):
         return False
 
     def _update_cache(self, query) -> None:
+        """Update cache with new query, evicting oldest item if necessary."""
         if len(self.cache) >= self.cache_size:
-            self.cache.pop(0)
+            evicted = self.cache.pop(0)  # FIFO eviction
+            self.logger.debug(f"Cache full: evicted item {evicted.get('id', 'unknown')}")
+        
         self.cache.append(query)
+        self.logger.debug(f"Added to cache: {query.get('id', 'unknown')}")
+        
+        # Periodically log cache fill status
+        if len(self.cache) in [1, 5, 10, self.cache_size//2, self.cache_size]:
+            self.logger.debug(f"Cache fill status: {len(self.cache)}/{self.cache_size}")
 
     def render(self, mode="human"):
         print(
@@ -298,3 +334,4 @@ def create_mariadb_cache_env(
         table_name=table_name,
         cache_weights=cache_weights,
     )
+
