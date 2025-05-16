@@ -201,7 +201,8 @@ def train_cache_model(
         params["clip_range"] = 0.3  # Wider clip range for more policy change
         
         if params["n_steps"] != original_n:
-            logger.debug(f"Adjusted PPO n_steps from {original_n} → {params['n_steps']} to match max_queries={max_queries}")
+            # Replace Unicode arrow (→) with ASCII arrow (->)
+            logger.debug(f"Adjusted PPO n_steps from {original_n} -> {params['n_steps']} to match max_queries={max_queries}")
             logger.debug(f"Increased entropy coefficient to {params['ent_coef']} and clip range to {params['clip_range']}")
     
     # Add early stopping to prevent catastrophic forgetting
@@ -373,7 +374,7 @@ def train_cache_model(
                     reward_history.append(mean_reward)
                     
                     # Extract hit rate from infos if available
-                    if hasattr(self.locals, 'infos') and self.locals.get('infos'):
+                    if hasattr(self, 'locals') and self.locals and 'infos' in self.locals:
                         hit_rates = [info.get('cache_hit_rate', 0) for info in self.locals['infos'] 
                                     if isinstance(info, dict) and 'cache_hit_rate' in info]
                         if hit_rates:
@@ -539,4 +540,3 @@ def evaluate_cache_model(
     env.close()
     torch.cuda.empty_cache()
     return results
-

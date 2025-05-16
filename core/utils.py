@@ -1,5 +1,8 @@
 # core/utils.py
 import os
+import platform
+import sys
+from typing import List, Dict, Any, Optional
 
 # Ensure logs directory exists before setting up logging
 log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
@@ -10,14 +13,31 @@ import subprocess
 
 import psutil
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(log_dir, "application.log")),
-        logging.StreamHandler()
-    ]
-)
+# Update logging configuration to ensure UTF-8 encoding is used
+def setup_logging():
+    """Configure logging with proper encoding for all environments."""
+    os.makedirs("logs", exist_ok=True)
+    
+    # Configure handlers with encoding
+    file_handler = logging.FileHandler("logs/application.log", encoding="utf-8")
+    
+    # Set up a stream handler that can handle Unicode for console output
+    stream_handler = logging.StreamHandler()
+    if platform.system() == "Windows":
+        # On Windows, ensure console properly encodes unicode
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer)
+    
+    # Configure the root logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[file_handler, stream_handler]
+    )
+
+# Call setup function at module import time
+setup_logging()
+
 logger = logging.getLogger(__name__)
 
 

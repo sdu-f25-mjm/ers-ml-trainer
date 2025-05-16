@@ -168,7 +168,7 @@ class MariaDBCacheEnvironment(gym.Env):
         self.queries_executed = 0
         self.cache_hits = 0
         self.cache_misses = 0
-        self.logger.info(
+        self.logger.debug(
             f"Environment reset: max_queries={self.max_queries}, "
             f"cache_size={self.cache_size}, data_len={len(self.data)}"
         )
@@ -176,8 +176,8 @@ class MariaDBCacheEnvironment(gym.Env):
         q_feat = self._get_query_features(0)
         c_feat = np.zeros(self.cache_size, dtype=np.float32)
         self.logger.debug("Reset: returning initial observation")
-        self.logger.info("Reset complete, returning initial observation")
-        self.logger.info(f"reset() returns obs shape: {q_feat.shape} + {c_feat.shape} = {np.concatenate([q_feat, c_feat]).shape}")
+        self.logger.debug("Reset complete, returning initial observation")
+        self.logger.debug(f"reset() returns obs shape: {q_feat.shape} + {c_feat.shape} = {np.concatenate([q_feat, c_feat]).shape}")
         return np.concatenate([q_feat, c_feat]), {}
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, dict]:
@@ -245,7 +245,7 @@ class MariaDBCacheEnvironment(gym.Env):
             # Periodic INFO level logging for key metrics
             if self.queries_executed % 100 == 0 or done:
                 hit_rate = self.cache_hits / max(1, self.queries_executed)
-                self.logger.info(
+                self.logger.debug(
                     f"Cache stats: hits={self.cache_hits}/{self.queries_executed} "
                     f"({hit_rate:.2f}) | size={len(self.cache)}/{self.cache_size}"
                 )

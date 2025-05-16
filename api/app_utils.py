@@ -26,7 +26,15 @@ file_handler = logging.FileHandler(log_path, encoding="utf-8")
 import sys
 if sys.platform.startswith("win"):
     import io
-    stream_handler = logging.StreamHandler(stream=io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", write_through=True))
+    try:
+        # Only wrap if sys.stdout has a buffer attribute
+        if hasattr(sys.stdout, 'buffer'):
+            stream_handler = logging.StreamHandler(stream=io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", write_through=True))
+        else:
+            stream_handler = logging.StreamHandler()
+    except Exception:
+        # Fallback to standard handler if wrapping fails
+        stream_handler = logging.StreamHandler()
 else:
     stream_handler = logging.StreamHandler()
 
@@ -192,8 +200,21 @@ async def run_training_job(
             use_gpu=use_gpu,
         )
 
-        logger.info(f"Training job {model_id} completed. Model saved at {model_path}")
-        logger.info(f"Evaluation results: {eval_results}")
+        # Safely encode any potentially problematic Unicode in JSON output
+        def safe_json_encode(obj):
+            """Helper to encode potentially problematic Unicode characters in logs."""
+            if isinstance(obj, dict):
+                return {k: safe_json_encode(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [safe_json_encode(i) for i in obj]
+            elif isinstance(obj, str):
+                # Replace potentially problematic Unicode characters
+                return obj.encode('ascii', errors='backslashreplace').decode('ascii')
+            else:
+                return obj
+
+        # Safely handle potentially problematic Unicode in log output
+        logger.info(f"Evaluation results: {safe_json_encode(eval_results)}")
 
         # Visualize (optional)
         try:
@@ -274,3 +295,4 @@ def get_dynamic_feature_columns_enum(db_url: str) -> Enum:
     exclude = {"id", "cache_name", "timestamp"}
     choices = {c: c for c in cols if c not in exclude}
     return Enum("FeatureColumnsEnum", choices)
+
