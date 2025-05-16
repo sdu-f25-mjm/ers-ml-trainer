@@ -496,6 +496,11 @@ def train_cache_model(
         json.dump(meta, f, indent=2)
     logger.info(f"Model & metadata saved to {save_path}")
 
+    train_env.close() # Close environments after training
+    eval_env.close()  # Close environments after training
+
+    return save_path # Ensure the save_path is returned
+
 def evaluate_cache_model(
     model_path: str,
     eval_steps: int = 1_000,
@@ -582,4 +587,3 @@ def evaluate_cache_model(
     env.close()
     torch.cuda.empty_cache()
     return results
-

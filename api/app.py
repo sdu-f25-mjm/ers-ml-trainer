@@ -284,29 +284,40 @@ async def export_model(model_id: str, output_dir: str = "best_model"):
 
         # Save metadata for Java/consumer compatibility
         meta_path = os.path.join(output_dir, "metadata.json")
-        if not os.path.exists(meta_path):
-            # fallback: try to copy from training
-            orig_meta = model_path.replace(".zip", ".meta.json")
-            if os.path.exists(orig_meta):
-                import shutil
-                shutil.copy(orig_meta, meta_path)
-
-        # Load metadata for extended info
-        metadata = {}
-        if os.path.exists(meta_path):
-            with open(meta_path, "r") as f:
-                metadata = json.load(f)
+        
+        # Load comprehensive metadata from training if available
+        training_meta_path = model_path + ".meta.json"
+        comprehensive_metadata = {}
+        if os.path.exists(training_meta_path):
+            with open(training_meta_path, "r", encoding="utf-8") as f:
+                comprehensive_metadata = json.load(f)
+        elif os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as f:
+                comprehensive_metadata = json.load(f)
 
         with open(output_path, "rb") as f:
             model_bytes = f.read()
         model_base64 = base64.b64encode(model_bytes).decode("utf-8")
 
-
+        # Determine input_dimension from comprehensive_metadata
+        input_dimension = None
+        if "obs_shape" in comprehensive_metadata and comprehensive_metadata["obs_shape"]:
+            input_dimension = comprehensive_metadata["obs_shape"][0]
+        elif "feature_columns" in comprehensive_metadata and "cache_size" in comprehensive_metadata:
+            feature_count = len(comprehensive_metadata.get("feature_columns", []))
+            cache_s = comprehensive_metadata.get("cache_size", 0)
+            input_dimension = feature_count + cache_s
+            logger.info(f"Calculated input_dimension={input_dimension} from features and cache_size in training metadata.")
+        
+        if not input_dimension or input_dimension <= 0:
+            input_dimension = 43
+            logger.warning(f"Could not determine input dimension from metadata, using default: {input_dimension}")
 
         save_best_model_base64(
             engine=engine,
-            metadata=metadata,
-            base64=model_base64
+            metadata=comprehensive_metadata,
+            model_base64=model_base64,
+            input_dimension=input_dimension
         )
         return {
             "model_id": model_id,
@@ -315,9 +326,11 @@ async def export_model(model_id: str, output_dir: str = "best_model"):
             "output_directory": output_dir,
             "status": "success",
             "saved_to_db": True,
-            "metadata_path": meta_path
+            "metadata_path": meta_path,
+            "input_dimension": input_dimension
         }
     except Exception as e:
+        logger.error(f"Failed to export model: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to export model: {str(e)}")
 
 
@@ -628,4 +641,3 @@ async def get_logs(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
-
