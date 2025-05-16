@@ -172,7 +172,6 @@ class MariaDBCacheEnvironment(gym.Env):
             f"Environment reset: max_queries={self.max_queries}, "
             f"cache_size={self.cache_size}, data_len={len(self.data)}"
         )
-        self.logger.info(seed)
         q_feat = self._get_query_features(0)
         c_feat = np.zeros(self.cache_size, dtype=np.float32)
         self.logger.debug("Reset: returning initial observation")
@@ -188,35 +187,54 @@ class MariaDBCacheEnvironment(gym.Env):
 
             # Hit check & update
             hit = self._check_cache_hit(current)
-            if action == 1 and not hit:
-                self._update_cache(current)
-
+            
+            # Calculate cache utilization as a percentage
+            cache_utilization = len(self.cache) / self.cache_size
+            
+            # Process the action (cache or don't cache)
+            if action == 1:  # Action to cache
+                if not hit:
+                    self._update_cache(current)
+                    # Small reward for using cache capacity wisely when under 80% capacity
+                    exploration_bonus = 0.1 if cache_utilization < 0.8 else 0
+                else:
+                    # Slight penalty for trying to cache an item that's already cached
+                    exploration_bonus = -0.05
+            else:  # Action to not cache
+                if not hit:
+                    # Neutral - valid choice to not cache something we don't have
+                    exploration_bonus = 0
+                else:
+                    # Small bonus for good decision not to cache what we already have
+                    exploration_bonus = 0.05
+            
             # Enhanced reward calculation with intermediate components
-            base_reward = 1.0 if hit else -1.0
-            reward_components = {"base": base_reward}
+            base_reward = 1.0 if hit else -0.5  # Less negative for misses to encourage exploration
+            reward_components = {"base": base_reward, "exploration": exploration_bonus}
             
             # Add weighted components if specified
             if self.cache_weights:
                 weighted_reward = 0.0
                 for col in self.cache_weights:
                     val = float(current.get(col, 0.0))
-                    weighted_reward += val
-                    reward_components[col] = val
+                    # Normalize large values to prevent reward explosion
+                    norm_val = np.tanh(val / 100) if col == "load_time_ms" else np.tanh(val)
+                    weighted_reward += norm_val
+                    reward_components[col] = norm_val
                 
                 # Scale reward by weights but maintain sign from hit/miss
-                reward_sign = 1.0 if hit else -1.0
+                reward_sign = 1.0 if hit else -0.5
                 raw_reward = abs(weighted_reward) * reward_sign
             else:
                 raw_reward = base_reward
             
-            # Scale reward and add small positive value for cache hit
-            # to help agent break out of all-negative reward scenarios
+            # Scale reward and add exploration bonus
             if hit:
                 # Enhanced reward for cache hit (larger bonus for valuable hits)
-                reward = float(np.tanh(raw_reward)) + 0.1  # Small bonus for any hit
+                reward = float(np.tanh(raw_reward)) + 0.2 + exploration_bonus  # Bigger bonus for hits
             else:
                 # Soften penalty for misses to avoid discouraging exploration
-                reward = float(np.tanh(raw_reward)) * 0.95
+                reward = float(np.tanh(raw_reward)) * 0.8 + exploration_bonus
                 
             reward_components["final"] = reward
 
@@ -254,6 +272,7 @@ class MariaDBCacheEnvironment(gym.Env):
                 "cache_hit_rate": self.cache_hits / max(1, self.queries_executed),
                 "cache_miss_rate": self.cache_misses / max(1, self.queries_executed),
                 "cache_size": len(self.cache),
+                "cache_utilization": cache_utilization,
                 "queries_executed": self.queries_executed,
                 "hit": hit,
                 "action": int(action),
@@ -277,25 +296,77 @@ class MariaDBCacheEnvironment(gym.Env):
 
     def _get_cache_features(self) -> np.ndarray:
         feat = np.zeros(self.cache_size, dtype=np.float32)
+        
+        # Fill slots with more informative values than just binary 1.0
         for i, itm in enumerate(self.cache):
             if i >= self.cache_size:
                 break
-            feat[i] = 1.0
+            
+            # Use scaled priority or load time as the feature value instead of just 1.0
+            if "calculated_priority" in itm:
+                feat[i] = min(1.0, float(itm["calculated_priority"]))
+            elif "load_time_ms" in itm:
+                feat[i] = min(1.0, float(itm["load_time_ms"]) / 1000.0)
+            else:
+                feat[i] = 1.0
+                
         return feat
 
     def _check_cache_hit(self, query) -> bool:
         for itm in self.cache:
-            if all(itm[c] == query[c] for c in self.feature_columns):
+            # Match only on essential fields (cache_key or equivalent unique ID)
+            # This is more reliable than matching all feature columns
+            if "cache_key" in query and "cache_key" in itm:
+                if query["cache_key"] == itm["cache_key"]:
+                    self.cache_hits += 1
+                    return True
+            elif "id" in query and "id" in itm:
+                if query["id"] == itm["id"]:
+                    self.cache_hits += 1
+                    return True
+            # Fallback to full feature comparison only if no unique keys available
+            elif all(itm.get(c) == query.get(c) for c in self.feature_columns):
                 self.cache_hits += 1
                 return True
+                
         self.cache_misses += 1
         return False
 
     def _update_cache(self, query) -> None:
-        """Update cache with new query, evicting oldest item if necessary."""
+        """Update cache with new query, prioritizing eviction strategy."""
+        
+        # Before evicting, check if this item is worth caching
+        worth_caching = True
+        if "calculated_priority" in query:
+            # Skip caching items with very low priority
+            worth_caching = float(query["calculated_priority"]) > 0.05
+        elif "load_time_ms" in query:
+            # Skip caching very fast items
+            worth_caching = float(query["load_time_ms"]) > 5.0
+            
+        if not worth_caching:
+            self.logger.debug(f"Skipped caching low-value item {query.get('id', 'unknown')}")
+            return
+            
+        # Evict if full
         if len(self.cache) >= self.cache_size:
-            evicted = self.cache.pop(0)  # FIFO eviction
-            self.logger.debug(f"Cache full: evicted item {evicted.get('id', 'unknown')}")
+            # Implement smarter eviction - remove lowest priority item instead of FIFO
+            if all("calculated_priority" in item for item in self.cache):
+                # Find item with lowest priority
+                lowest_idx = 0
+                lowest_priority = float(self.cache[0].get("calculated_priority", 0))
+                
+                for i, item in enumerate(self.cache):
+                    if float(item.get("calculated_priority", 0)) < lowest_priority:
+                        lowest_idx = i
+                        lowest_priority = float(item.get("calculated_priority", 0))
+                        
+                evicted = self.cache.pop(lowest_idx)
+                self.logger.debug(f"Cache full: evicted lowest priority item {evicted.get('id', 'unknown')}")
+            else:
+                # Fall back to FIFO if no priority information
+                evicted = self.cache.pop(0)
+                self.logger.debug(f"Cache full: evicted oldest item {evicted.get('id', 'unknown')}")
         
         self.cache.append(query)
         self.logger.debug(f"Added to cache: {query.get('id', 'unknown')}")
@@ -334,4 +405,3 @@ def create_mariadb_cache_env(
         table_name=table_name,
         cache_weights=cache_weights,
     )
-

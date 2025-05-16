@@ -88,28 +88,28 @@ def get_hyperparameters(alg: str, device: str) -> Dict[str, Any]:
     """Base hyperparameters by algorithm & device."""
     params = {
         "dqn": {
-            "cpu":   {"learning_rate":3e-4, "batch_size":64,  "buffer_size":10_000,
+            "cpu":   {"learning_rate":5e-4, "batch_size":128,  "buffer_size":50_000,
+                      "learning_starts":500, "target_update_interval":250,
+                      "net_arch":[256,256], "ent_coef":0.1, "vf_coef":0.1},
+            "cuda":  {"learning_rate":7e-4, "batch_size":256, "buffer_size":100_000,
                       "learning_starts":1_000, "target_update_interval":500,
-                      "net_arch":[128,128], "ent_coef":0.05, "vf_coef":0.1},
-            "cuda":  {"learning_rate":5e-4, "batch_size":128, "buffer_size":50_000,
-                      "learning_starts":2_000, "target_update_interval":1_000,
-                      "net_arch":[256,256], "ent_coef":0.05, "vf_coef":0.1},
+                      "net_arch":[512,512], "ent_coef":0.1, "vf_coef":0.1},
         },
         "a2c": {
-            "cpu":   {"learning_rate":7e-4, "batch_size":32, "n_steps":8,
-                      "ent_coef":0.01, "vf_coef":0.1, "net_arch":[128,128]},
-            "cuda":  {"learning_rate":1e-3, "batch_size":64, "n_steps":16,
-                      "ent_coef":0.01, "vf_coef":0.1, "net_arch":[256,256]},
+            "cpu":   {"learning_rate":1e-3, "batch_size":64, "n_steps":16,
+                      "ent_coef":0.05, "vf_coef":0.1, "net_arch":[256,256]},
+            "cuda":  {"learning_rate":2e-3, "batch_size":128, "n_steps":32,
+                      "ent_coef":0.05, "vf_coef":0.1, "net_arch":[512,512]},
         },
         "ppo": {
-            "cpu":   {"learning_rate":1e-4, "batch_size":64,  "n_steps":256,
-                      "n_epochs":4, "ent_coef":0.05, "vf_coef":0.1,
-                      "clip_range":0.2, "max_grad_norm":10.0,
-                      "net_arch":[128,128]},
-            "cuda":  {"learning_rate":2e-4, "batch_size":256, "n_steps":512,
-                      "n_epochs":10, "ent_coef":0.05, "vf_coef":0.1,
-                      "clip_range":0.2, "max_grad_norm":10.0,
+            "cpu":   {"learning_rate":3e-4, "batch_size":128,  "n_steps":256,
+                      "n_epochs":5, "ent_coef":0.1, "vf_coef":0.1,
+                      "clip_range":0.3, "max_grad_norm":10.0,
                       "net_arch":[256,256]},
+            "cuda":  {"learning_rate":4e-4, "batch_size":256, "n_steps":512,
+                      "n_epochs":10, "ent_coef":0.1, "vf_coef":0.1,
+                      "clip_range":0.3, "max_grad_norm":10.0,
+                      "net_arch":[512,512]},
         },
     }
     return params[alg][device]
@@ -540,3 +540,4 @@ def evaluate_cache_model(
     env.close()
     torch.cuda.empty_cache()
     return results
+
